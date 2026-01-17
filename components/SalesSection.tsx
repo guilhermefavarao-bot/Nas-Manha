@@ -19,7 +19,7 @@ const SalesSection: React.FC<Props> = ({ orders, products, salesHistory, onCreat
   const [selectedOrder, setSelectedOrder] = useState<string>('');
   const [productSearch, setProductSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<string>('');
-  const [qty, setQty] = useState(1);
+  const [qty, setQty] = useState<number | string>(1); // Permitir string para edição livre
   const [closingOrder, setClosingOrder] = useState<Order | null>(null);
 
   const filteredProducts = useMemo(() => {
@@ -36,7 +36,8 @@ const SalesSection: React.FC<Props> = ({ orders, products, salesHistory, onCreat
 
   const handleAddItem = () => {
     if (!selectedOrder || !selectedProduct) return;
-    onAddItem(parseInt(selectedOrder), selectedProduct, qty);
+    const finalQty = Math.max(1, parseInt(qty.toString()) || 1);
+    onAddItem(parseInt(selectedOrder), selectedProduct, finalQty);
     setQty(1); setSelectedProduct(''); setProductSearch('');
   };
 
@@ -80,7 +81,15 @@ const SalesSection: React.FC<Props> = ({ orders, products, salesHistory, onCreat
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-700" />
               <input type="text" placeholder="Buscar produto..." value={productSearch} onChange={e => setProductSearch(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-4 pl-12 text-white outline-none" />
             </div>
-            <input type="number" value={qty} onChange={e => setQty(parseInt(e.target.value) || 1)} className="w-20 bg-black border border-zinc-800 rounded-2xl p-4 text-white text-center font-bold outline-none" />
+            <input 
+              type="number" 
+              min="1"
+              value={qty} 
+              onFocus={(e) => e.target.select()} // Seleciona tudo ao clicar
+              onChange={e => setQty(e.target.value)} // Permite apagar livremente
+              onBlur={() => { if (!qty || Number(qty) < 1) setQty(1); }} // Valida ao sair do campo
+              className="w-20 bg-black border border-zinc-800 rounded-2xl p-4 text-white text-center font-bold outline-none focus:border-[#FFD700]" 
+            />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto pr-1">
             {filteredProducts.map(p => (
