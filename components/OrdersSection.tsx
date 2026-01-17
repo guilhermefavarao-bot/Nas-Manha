@@ -34,10 +34,22 @@ const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelet
 
   const handleWhatsAppNotify = (order: Order) => {
     if (!order.telefone || order.telefone.length < 10) return alert("WhatsApp não cadastrado.");
+    
     const cleanPhone = order.telefone.replace(/\D/g, '');
     const hour = new Date().getHours();
     const saudacao = hour < 12 ? 'Bom dia' : (hour < 18 ? 'Boa tarde' : 'Boa noite');
-    const message = `*ADEGA NAS MANHA* 🍻\n\n${saudacao}, *${order.cliente}*!\n\nSeu pedido está *PRONTO* para retirada! 🚀\n\n💰 *Total:* R$ ${order.total.toFixed(2)}\n\nAguardamos você! 🥂`;
+    const comandaNum = order.id.toString().slice(-4);
+    
+    // Formatação da lista de itens para o WhatsApp
+    const itensFormatados = order.itens.map(item => `• ${item.qtd}x ${item.nome}`).join('\n');
+
+    const message = `*ADEGA NAS MANHA* 🍻\n\n` +
+      `${saudacao}, *${order.cliente}*!\n\n` +
+      `Seu pedido *#${comandaNum}* está *PRONTO* para retirada! 🚀\n\n` +
+      `📝 *ITENS DO PEDIDO:*\n${itensFormatados}\n\n` +
+      `💰 *TOTAL:* R$ ${order.total.toFixed(2)}\n\n` +
+      `Aguardamos você! 🥂`;
+
     window.open(`https://wa.me/${cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
@@ -45,7 +57,6 @@ const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelet
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
     
-    // Envia o pagamento estruturado para o App.tsx
     onCloseOrder(orderId, [{ type, value: Number(order.total) }]);
     setClosingOrderId(null);
   };
