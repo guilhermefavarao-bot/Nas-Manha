@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Package, Search, Edit2, Trash2, FileSpreadsheet, Loader2, Upload, Download, X, Save, FileText, Plus, AlertTriangle } from 'lucide-react';
+import { Package, Search, Edit2, Trash2, FileSpreadsheet, Loader2, Upload, Download, X, Save, FileText, Plus, AlertTriangle, Layers } from 'lucide-react';
 import { Product } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -17,6 +17,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
   const [preco, setPreco] = useState('');
   const [custo, setCusto] = useState('');
   const [qtd, setQtd] = useState('');
+  const [categoria, setCategoria] = useState<'Adega' | 'Tabacaria'>('Adega');
   const [search, setSearch] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -33,6 +34,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
     setPreco(p.preco.toString());
     setCusto(p.custo.toString());
     setQtd(p.qtd.toString());
+    setCategoria(p.categoria || 'Adega');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -40,7 +42,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
   const handleCancel = () => {
     setEditingId(null);
     setShowForm(false);
-    setNome(''); setPreco(''); setCusto(''); setQtd('');
+    setNome(''); setPreco(''); setCusto(''); setQtd(''); setCategoria('Adega');
   };
 
   const handleSaveProduct = async () => {
@@ -53,7 +55,8 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
         nome: cleanNome,
         preco: Number(preco.toString().replace(',', '.')),
         custo: Number(custo.toString().replace(',', '.')) || 0,
-        qtd: parseInt(qtd.toString()) || 0
+        qtd: parseInt(qtd.toString()) || 0,
+        categoria: categoria
       };
 
       if (editingId) payload.id = editingId;
@@ -68,7 +71,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
   };
 
   const handleDownloadTemplate = () => {
-    const template = [{ nome: "EXEMPLO PRODUTO", preco: 10.50, custo: 5.00, qtd: 100 }];
+    const template = [{ nome: "EXEMPLO PRODUTO", preco: 10.50, custo: 5.00, qtd: 100, categoria: "Adega" }];
     const ws = XLSX.utils.json_to_sheet(template);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Modelo");
@@ -94,7 +97,8 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
               nome: String(pName).trim(),
               preco: Number(item.preco || item.Preço || item.PRECO || 0),
               custo: Number(item.custo || item.Custo || item.CUSTO || 0),
-              qtd: Number(item.qtd || item.Quantidade || item.QTD || 0)
+              qtd: Number(item.qtd || item.Quantidade || item.QTD || 0),
+              categoria: (item.categoria || 'Adega') as any
             });
             count++;
           }
@@ -142,6 +146,20 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
               <input type="text" placeholder="Ex: Cerveja Antarctica" value={nome} onChange={e => setNome(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
             </div>
             <div className="space-y-1.5">
+              <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Categoria do Item</label>
+              <div className="relative">
+                <Layers className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-700" />
+                <select 
+                  value={categoria} 
+                  onChange={e => setCategoria(e.target.value as any)} 
+                  className="w-full bg-black border border-zinc-800 rounded-2xl p-5 pl-14 text-white text-sm focus:border-[#FFD700] outline-none appearance-none cursor-pointer"
+                >
+                  <option value="Adega">Adega (Bebidas)</option>
+                  <option value="Tabacaria">Tabacaria (Essência, Carvão...)</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
               <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Valor de Venda (R$)</label>
               <input type="text" placeholder="0,00" value={preco} onChange={e => setPreco(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
             </div>
@@ -174,7 +192,12 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
             <div className="flex items-center gap-6">
               <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center font-black text-xl text-zinc-600 group-hover:text-[#FFD700] transition-colors">{p.nome[0].toUpperCase()}</div>
               <div>
-                <div className="font-black text-white uppercase text-sm tracking-widest">{p.nome}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-black text-white uppercase text-sm tracking-widest">{p.nome}</div>
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md border ${p.categoria === 'Tabacaria' ? 'border-orange-500/30 text-orange-500 bg-orange-500/5' : 'border-blue-500/30 text-blue-500 bg-blue-500/5'}`}>
+                    {p.categoria || 'Adega'}
+                  </span>
+                </div>
                 <div className="flex gap-6 mt-2">
                   <span className="text-[#FFD700] text-[10px] font-black tracking-widest">R$ {Number(p.preco).toFixed(2)}</span>
                   <div className="flex items-center gap-1">

@@ -23,6 +23,7 @@ export interface Product {
   preco: number;
   custo: number;
   qtd: number;
+  categoria?: 'Adega' | 'Tabacaria';
 }
 
 export interface ItemPedido {
