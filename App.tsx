@@ -57,15 +57,16 @@ const App: React.FC = () => {
         supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(50)
       ]);
 
-      if (pRes.error) throw new Error("Falha ao carregar Estoque");
-      if (oRes.error) throw new Error("Falha ao carregar Comandas");
+      if (pRes.error) throw pRes.error;
+      if (oRes.error) throw oRes.error;
 
       setProducts(pRes.data || []);
       setOrders(oRes.data || []);
       setSalesHistory(hRes.data || []);
       setCashier(cRes.data || []);
     } catch (err: any) {
-      addNotification(err.message || "Erro de sincronização", "error");
+      console.error("Fetch error:", err);
+      addNotification("Erro de conexão com o banco", "error");
     } finally {
       setSyncing(false);
       setLoading(false);
@@ -81,16 +82,25 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        setUserRole(session.user.user_metadata?.role || 'atendente');
-        fetchPermissions();
-      } else {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        if (session?.user) {
+          setUser(session.user);
+          setUserRole(session.user.user_metadata?.role || 'atendente');
+          fetchPermissions();
+          // fetchData será chamado pelo useEffect que observa o 'user'
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Auth initialization error:", err);
         setLoading(false);
       }
     };
     initAuth();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUser(session.user);
@@ -119,11 +129,10 @@ const App: React.FC = () => {
     }
   };
 
-  // Added missing handleDeleteProduct function
   const handleDeleteProduct = async (id: string) => {
     const { error } = await supabase.from('products').delete().eq('id', id);
     if (error) {
-      addNotification("Erro ao excluir: " + error.message, "error");
+      addNotification("Erro ao excluir", "error");
     } else {
       addNotification("Produto removido!", "success");
       fetchData();
@@ -157,7 +166,7 @@ const App: React.FC = () => {
     if (product.qtd < qty) return addNotification("Estoque esgotado!", "error");
 
     const newQty = Number(qty);
-    const newItem = { nome: product.nome, qtd: newQty, preco: Number(product.preco), custo: Number(product.custo) };
+    const newItem = { nome: product.nome, qty: newQty, preco: Number(product.preco), custo: Number(product.custo) };
     const newItens = [...(order.itens || []), newItem];
     const newTotal = Number(order.total) + (Number(product.preco) * newQty);
 
@@ -203,7 +212,7 @@ const App: React.FC = () => {
       const { error: cashError } = await supabase.from('cash_entries').insert(cashEntries);
       if (updateError || cashError) throw new Error("Falha ao registrar no caixa");
 
-      addNotification("Venda concluída e salva no caixa!", "success");
+      addNotification("Venda concluída!", "success");
       fetchData();
     } catch (err: any) {
       addNotification("Erro no fechamento", "error");
@@ -228,7 +237,7 @@ const App: React.FC = () => {
       {loading ? (
         <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-[9999]">
           <Loader2 className="w-16 h-16 text-[#FFD700] animate-spin mb-4" />
-          <p className="text-zinc-500 font-black uppercase text-[10px] tracking-widest">Iniciando Protocolos...</p>
+          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Iniciando Sistema...</p>
         </div>
       ) : (
         <>

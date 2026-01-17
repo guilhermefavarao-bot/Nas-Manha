@@ -1,13 +1,13 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// No Vercel, estas variáveis devem ser configuradas no painel de Environment Variables.
-// Se não houver processo de build, usamos os valores fixos fornecidos.
+// No Vercel, estas variáveis devem ser configuradas no painel de Environment Variables (Settings -> Environment Variables).
 const supabaseUrl = 'https://hqsyrnwwtifukluyjduy.supabase.co';
-const supabaseAnonKey = 'sb_publishable_BybpSCg6f3ZWmo5RuFVm3A_usLGQ2fE'; 
 
-// NOTA: A chave acima parece ser curta demais para uma chave anon do Supabase. 
-// Certifique-se de usar a 'anon public' key que começa com 'eyJ...' no painel do Supabase.
+// IMPORTANTE: A chave que você tinha no código ('sb_publishable_...') é do Stripe.
+// Você deve pegar a chave 'anon' ou 'public' no painel do Supabase (Settings -> API).
+// Ela deve começar com 'eyJ...'.
+const supabaseAnonKey = 'SUA_CHAVE_ANON_DO_SUPABASE_AQUI'; 
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
