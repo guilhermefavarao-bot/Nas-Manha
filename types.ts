@@ -17,13 +17,15 @@ export interface RolePermissions {
   stock: boolean;
 }
 
+export type Category = 'Adega' | 'Tabacaria' | 'Combos' | 'Doses' | 'Comidas';
+
 export interface Product {
   id: string;
   nome: string;
   preco: number;
   custo: number;
   qtd: number;
-  categoria?: 'Adega' | 'Tabacaria';
+  categoria?: Category;
 }
 
 export interface ItemPedido {

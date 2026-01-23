@@ -90,7 +90,6 @@ const App: React.FC = () => {
           setUser(session.user);
           setUserRole(session.user.user_metadata?.role || 'atendente');
           fetchPermissions();
-          // fetchData será chamado pelo useEffect que observa o 'user'
         } else {
           setLoading(false);
         }
@@ -163,7 +162,12 @@ const App: React.FC = () => {
     const order = orders.find(o => o.id === orderId);
     if (!product || !order) return;
 
-    if (product.qtd < qty) return addNotification("Estoque esgotado!", "error");
+    // Categorias que não contabilizam estoque
+    const skipStock = product.categoria === 'Combos' || product.categoria === 'Doses';
+
+    if (!skipStock && product.qtd < qty) {
+      return addNotification("Estoque esgotado!", "error");
+    }
 
     const newQty = Number(qty);
     const newItem = { nome: product.nome, qty: newQty, preco: Number(product.preco), custo: Number(product.custo) };
@@ -172,7 +176,13 @@ const App: React.FC = () => {
 
     try {
       const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: newTotal }).eq('id', orderId);
-      const { error: stockError } = await supabase.from('products').update({ qtd: product.qtd - newQty }).eq('id', productId);
+      
+      let stockError = null;
+      if (!skipStock) {
+        const { error } = await supabase.from('products').update({ qtd: product.qtd - newQty }).eq('id', productId);
+        stockError = error;
+      }
+
       if (orderError || stockError) throw new Error("Erro de atualização");
       addNotification("Lançado!", "success");
       fetchData();
