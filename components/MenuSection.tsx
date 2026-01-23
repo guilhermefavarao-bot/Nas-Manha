@@ -1,20 +1,21 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, Beer, Wine, GlassWater, Zap, Flame, Box, Cigarette } from 'lucide-react';
+import { Search, Beer, Wine, GlassWater, Zap, Flame, Box, Cigarette, Utensils, Layers, CupSoda } from 'lucide-react';
 import { Product } from '../types';
 
 interface Props {
   products: Product[];
 }
 
+type MenuCategory = Product['categoria'] | 'Adega';
+
 const MenuSection: React.FC<Props> = ({ products }) => {
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'Adega' | 'Tabacaria'>('Adega');
+  const [activeTab, setActiveTab] = useState<NonNullable<Product['categoria']>>('Adega');
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchesSearch = p.nome.toLowerCase().includes(search.toLowerCase());
-      // Fallback: se o produto não tem categoria definida, assumimos Adega
       const pCategory = p.categoria || 'Adega';
       return matchesSearch && pCategory === activeTab;
     });
@@ -27,6 +28,9 @@ const MenuSection: React.FC<Props> = ({ products }) => {
       if (n.includes('essência') || n.includes('essencia')) return <Box className="w-4 h-4 text-purple-400" />;
       return <Cigarette className="w-4 h-4 text-zinc-400" />;
     }
+    if (category === 'Comidas') return <Utensils className="w-4 h-4 text-green-500" />;
+    if (category === 'Combos') return <Layers className="w-4 h-4 text-purple-500" />;
+    if (category === 'Doses') return <CupSoda className="w-4 h-4 text-blue-400" />;
 
     const n = name.toLowerCase();
     if (n.includes('vinho')) return <Wine className="w-4 h-4" />;
@@ -35,6 +39,14 @@ const MenuSection: React.FC<Props> = ({ products }) => {
     return <GlassWater className="w-4 h-4" />;
   };
 
+  const tabs: {id: NonNullable<Product['categoria']>, label: string, icon: React.ReactNode}[] = [
+    { id: 'Adega', label: 'Adega', icon: <Beer className="w-4 h-4" /> },
+    { id: 'Tabacaria', label: 'Tabacaria', icon: <Flame className="w-4 h-4" /> },
+    { id: 'Combos', label: 'Combos', icon: <Layers className="w-4 h-4" /> },
+    { id: 'Doses', label: 'Doses', icon: <CupSoda className="w-4 h-4" /> },
+    { id: 'Comidas', label: 'Comidas', icon: <Utensils className="w-4 h-4" /> },
+  ];
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col gap-6">
@@ -42,20 +54,17 @@ const MenuSection: React.FC<Props> = ({ products }) => {
           Cardápio Digital
         </h2>
 
-        {/* Sistema de Abas */}
-        <div className="flex gap-2 p-1.5 bg-[#141414] rounded-2xl border border-zinc-900">
-          <button 
-            onClick={() => setActiveTab('Adega')} 
-            className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'Adega' ? 'bg-[#FFD700] text-black shadow-lg' : 'text-zinc-600 hover:text-zinc-400'}`}
-          >
-            <Beer className="w-4 h-4" /> Adega
-          </button>
-          <button 
-            onClick={() => setActiveTab('Tabacaria')} 
-            className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'Tabacaria' ? 'bg-[#FFD700] text-black shadow-lg' : 'text-zinc-600 hover:text-zinc-400'}`}
-          >
-            <Flame className="w-4 h-4" /> Tabacaria
-          </button>
+        {/* Sistema de Abas com Rolagem Lateral */}
+        <div className="flex gap-2 p-1.5 bg-[#141414] rounded-2xl border border-zinc-900 overflow-x-auto no-scrollbar">
+          {tabs.map((tab) => (
+            <button 
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)} 
+              className={`flex-shrink-0 flex items-center justify-center gap-3 py-4 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-[#FFD700] text-black shadow-lg' : 'text-zinc-600 hover:text-zinc-400'}`}
+            >
+              {tab.icon} {tab.label}
+            </button>
+          ))}
         </div>
 
         <div className="relative">
@@ -77,15 +86,20 @@ const MenuSection: React.FC<Props> = ({ products }) => {
               <div className="flex items-center gap-2 text-zinc-500 mb-1">
                 {getCategoryIcon(product.nome, product.categoria)}
                 <span className="text-[10px] uppercase font-black tracking-widest">
-                  {product.categoria === 'Tabacaria' ? 'Premium Smoke' : 'Adega Nas Manha'}
+                  {product.categoria === 'Tabacaria' ? 'Premium Smoke' : 
+                   product.categoria === 'Comidas' ? 'Cozinha Nas Manha' :
+                   product.categoria === 'Combos' ? 'Kits Especiais' :
+                   product.categoria === 'Doses' ? 'Shot Selection' : 'Adega Nas Manha'}
                 </span>
               </div>
               <h3 className="text-zinc-100 font-bold text-lg leading-tight group-hover:text-white transition-colors">
                 {product.nome}
               </h3>
               <div className="mt-2 flex items-center gap-3">
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${product.qtd > 0 ? 'bg-green-900/30 text-green-500' : 'bg-red-900/30 text-red-500'}`}>
-                  {product.qtd > 0 ? 'Em estoque' : 'Esgotado'}
+                <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter ${
+                  (product.categoria === 'Combos' || product.categoria === 'Doses' || product.qtd > 0) ? 'bg-green-900/30 text-green-500' : 'bg-red-900/30 text-red-500'
+                }`}>
+                  {(product.categoria === 'Combos' || product.categoria === 'Doses') ? 'Disponível' : product.qtd > 0 ? 'Em estoque' : 'Esgotado'}
                 </span>
                 {product.categoria === 'Tabacaria' && (
                   <span className="text-[9px] text-orange-500/60 font-black uppercase tracking-tighter">Hookah Selection</span>
@@ -96,7 +110,9 @@ const MenuSection: React.FC<Props> = ({ products }) => {
               <div className="text-[#FFD700] font-black text-2xl tracking-tighter">
                 R$ {product.preco.toFixed(2)}
               </div>
-              <div className="text-[10px] text-zinc-600 font-bold uppercase">Preço Unitário</div>
+              <div className="text-[10px] text-zinc-600 font-bold uppercase">
+                {product.categoria === 'Doses' ? 'Dose' : 'Unitário'}
+              </div>
             </div>
           </div>
         ))}
