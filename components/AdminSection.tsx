@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Package, Search, Edit2, Trash2, FileSpreadsheet, Loader2, Upload, Download, X, Save, FileText, Plus, AlertTriangle, Layers } from 'lucide-react';
+import { Package, Search, Edit2, Trash2, FileSpreadsheet, Loader2, Upload, Download, X, Save, FileText, Plus, AlertTriangle, Layers, Share } from 'lucide-react';
 import { Product, Category } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -71,7 +71,6 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
   };
 
   const handleDownloadTemplate = () => {
-    // Modelo atualizado com coluna de Categoria
     const template = [
       { nome: "CERVEJA SKOL LATA", preco: 5.50, custo: 3.20, qtd: 100, categoria: "Adega" },
       { nome: "ESSENCIA ZOMO", preco: 12.00, custo: 7.00, qtd: 50, categoria: "Tabacaria" },
@@ -83,6 +82,29 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Modelo_Importacao");
     XLSX.writeFile(wb, "MODELO_ADEGA_NAS_MANHA.xlsx");
+  };
+
+  const handleExportStock = () => {
+    if (products.length === 0) return alert("Não há produtos no estoque para exportar.");
+    
+    const exportData = products.map(p => ({
+      "Nome": p.nome,
+      "Preço de Venda": p.preco,
+      "Custo": p.custo,
+      "Quantidade": p.qtd,
+      "Categoria": p.categoria || 'Adega',
+      "Valor Total em Estoque": (p.preco * p.qtd).toFixed(2)
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Estoque_Atual");
+    
+    // Auto-ajuste de colunas
+    ws['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 25 }];
+    
+    const date = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `ESTOQUE_ADEGA_${date}.xlsx`);
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,14 +122,13 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
         for (const item of data) {
           const pName = item.nome || item.Nome || item.NOME;
           if (pName) {
-            // Normalização da categoria importada
             let cat: any = item.categoria || item.Categoria || item.CATEGORIA || 'Adega';
             const validCats = ['Adega', 'Tabacaria', 'Combos', 'Doses', 'Comidas'];
             if (!validCats.includes(cat)) cat = 'Adega';
 
             await onUpsertProduct({
               nome: String(pName).trim(),
-              preco: Number(item.preco || item.Preço || item.PRECO || 0),
+              preco: Number(item.preco || item.Preço || item.PRECO || item['Preço de Venda'] || 0),
               custo: Number(item.custo || item.Custo || item.CUSTO || 0),
               qtd: Number(item.qtd || item.Quantidade || item.QTD || 0),
               categoria: cat
@@ -136,13 +157,19 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
           <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">Gestão de Itens e Insumos</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 bg-blue-600/10 border border-blue-600/20 rounded-xl text-[9px] font-black uppercase text-blue-400 hover:bg-blue-600 hover:text-white transition-all">
-            <Download className="w-4 h-4" /> Baixar Modelo
+          <button onClick={handleDownloadTemplate} title="Baixar planilha modelo" className="flex items-center gap-2 px-3 py-2 bg-blue-600/10 border border-blue-600/20 rounded-xl text-[9px] font-black uppercase text-blue-400 hover:bg-blue-600 hover:text-white transition-all">
+            <Download className="w-4 h-4" /> Modelo
           </button>
+          
+          <button onClick={handleExportStock} title="Exportar estoque atual para Excel" className="flex items-center gap-2 px-3 py-2 bg-green-600/10 border border-green-600/20 rounded-xl text-[9px] font-black uppercase text-green-500 hover:bg-green-600 hover:text-white transition-all">
+            <FileSpreadsheet className="w-4 h-4" /> Exportar
+          </button>
+
           <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
           <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[9px] font-black uppercase text-zinc-400 hover:text-[#FFD700] transition-all disabled:opacity-20">
-            {isImporting ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4" />} Importar XLSX
+            {isImporting ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4" />} Importar
           </button>
+
           <button onClick={() => setShowForm(!showForm)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${showForm ? 'bg-zinc-800 text-zinc-400' : 'bg-[#FFD700] text-black hover:scale-105 shadow-lg shadow-yellow-500/10'}`}>
             {showForm ? <X className="w-4 h-4"/> : <Plus className="w-4 h-4"/>} 
             {showForm ? 'Fechar' : 'Novo Produto'}

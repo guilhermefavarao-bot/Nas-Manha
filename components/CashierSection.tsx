@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { DollarSign, Wallet, CreditCard, Landmark, TrendingUp, Calendar, ArrowRight, FileSpreadsheet, Info, Loader2 } from 'lucide-react';
+import { DollarSign, Wallet, CreditCard, Landmark, TrendingUp, Calendar, ArrowRight, FileSpreadsheet, Info, Loader2, Package } from 'lucide-react';
 import { CashEntry, Order } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -16,7 +16,6 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
   const [endDate, setEndDate] = useState(todayStr);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Função robusta de comparação de datas (ignora a hora)
   const isInRange = (dateStr: string) => {
     if (!dateStr) return false;
     const itemDate = dateStr.split('T')[0];
@@ -24,13 +23,9 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
   };
 
   const { metrics, costFiltered, profitFiltered, entriesFiltered } = useMemo(() => {
-    // 1. Filtra as entradas de caixa do período
     const filteredEntries = entries.filter(e => isInRange(e.data));
-    
-    // 2. Filtra os pedidos (comanda) do período para cálculo de custo/lucro
     const filteredSales = salesHistory.filter(s => isInRange(s.data));
 
-    // 3. Calcula Faturamento por Modalidade
     const m = filteredEntries.reduce((acc, curr) => {
       acc.revenue += curr.valor;
       const forma = curr.forma.toLowerCase();
@@ -40,7 +35,6 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
       return acc;
     }, { revenue: 0, pix: 0, cartao: 0, dinheiro: 0 });
 
-    // 4. Calcula Custo (Baseado nos itens dos pedidos fechados)
     const totalCost = filteredSales.reduce((acc, sale) => {
       const saleCost = sale.itens?.reduce((itemAcc, item) => {
         return itemAcc + ((item.custo || 0) * item.qtd);
@@ -83,7 +77,6 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
     setIsExporting(true);
     
     try {
-      // 1. Aba Resumo Geral
       const resumoData = [
         { "DESCRICAO": "RELATORIO FINANCEIRO - ADEGA NAS MANHA", "VALOR": "" },
         { "DESCRICAO": "Periodo", "VALOR": `${formatDate(startDate)} a ${formatDate(endDate)}` },
@@ -98,24 +91,23 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
         { "DESCRICAO": "TOTAL DE VENDAS", "VALOR": entriesFiltered.length }
       ];
 
-      // 2. Aba Detalhes das Vendas
-      const detalhesData = entriesFiltered.map(entry => ({
-        "Data": new Date(entry.data).toLocaleDateString('pt-BR'),
-        "Hora": new Date(entry.data).toLocaleTimeString('pt-BR'),
-        "Cliente": entry.cliente,
-        "Forma": entry.forma,
-        "Valor (R$)": entry.valor.toFixed(2)
-      }));
+      const detalhesData = entriesFiltered.map(entry => {
+        return {
+          "Data": new Date(entry.data).toLocaleDateString('pt-BR'),
+          "Hora": new Date(entry.data).toLocaleTimeString('pt-BR'),
+          "Cliente": entry.cliente,
+          "Forma": entry.forma,
+          "Valor (R$)": entry.valor.toFixed(2),
+          "Produtos": entry.itens?.map(i => `${i.qtd}x ${i.nome}`).join(", ") || ""
+        };
+      });
 
-      // Criação do Workbook
       const wb = XLSX.utils.book_new();
-      
       const wsResumo = XLSX.utils.json_to_sheet(resumoData);
       const wsDetalhes = XLSX.utils.json_to_sheet(detalhesData);
       
-      // Ajuste de colunas
       wsResumo['!cols'] = [{ wch: 40 }, { wch: 20 }];
-      wsDetalhes['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 15 }, { wch: 15 }];
+      wsDetalhes['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 50 }];
 
       XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
       XLSX.utils.book_append_sheet(wb, wsDetalhes, "Vendas_Detalhadas");
@@ -125,7 +117,7 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
       
     } catch (err) {
       console.error("Erro ao exportar:", err);
-      alert("Erro ao gerar o arquivo Excel. Verifique se a biblioteca está carregada.");
+      alert("Erro ao gerar o arquivo Excel.");
     } finally {
       setIsExporting(false);
     }
@@ -181,7 +173,7 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
             </div>
             <div className="flex-1 text-[9px] text-zinc-700 font-medium leading-tight">
               <Info className="w-3 h-3 mb-1" />
-              Calculado sobre {entriesFiltered.length} vendas no período de {formatDate(startDate)} a {formatDate(endDate)}.
+              Calculado sobre {entriesFiltered.length} vendas no período.
             </div>
           </div>
         </div>
@@ -200,7 +192,7 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
             {entriesFiltered.length} Itens
           </span>
         </div>
-        <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+        <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
           {entriesFiltered.length === 0 ? (
             <div className="p-16 text-center space-y-4">
               <DollarSign className="w-10 h-10 text-zinc-800 mx-auto" />
@@ -209,27 +201,44 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
           ) : (
             <div className="divide-y divide-zinc-900">
               {[...entriesFiltered].reverse().map(entry => (
-                <div key={entry.id} className="p-5 flex justify-between items-center hover:bg-zinc-800/20 transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black transition-transform group-hover:scale-110 ${
-                      entry.forma.toLowerCase().includes('pix') ? 'bg-blue-900/20 text-blue-400' :
-                      entry.forma.toLowerCase().includes('cart') ? 'bg-purple-900/20 text-purple-400' :
-                      'bg-yellow-900/20 text-yellow-500'
-                    }`}>
-                      {entry.forma[0].toUpperCase()}
+                <div key={entry.id} className="p-5 flex flex-col gap-3 hover:bg-zinc-800/20 transition-all group">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black transition-transform group-hover:scale-110 ${
+                        entry.forma.toLowerCase().includes('pix') ? 'bg-blue-900/20 text-blue-400' :
+                        entry.forma.toLowerCase().includes('cart') ? 'bg-purple-900/20 text-purple-400' :
+                        'bg-yellow-900/20 text-yellow-500'
+                      }`}>
+                        {entry.forma[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="font-black text-white uppercase text-xs">{entry.cliente}</div>
+                        <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-tight mt-1">
+                          {entry.forma} • {new Date(entry.data).toLocaleString('pt-BR')}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-black text-white uppercase text-xs">{entry.cliente}</div>
-                      <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-tight mt-1">
-                        {entry.forma} • {new Date(entry.data).toLocaleString('pt-BR')}
+                    <div className="text-right">
+                      <div className="text-lg font-black text-white group-hover:text-[#FFD700] transition-colors">
+                        R$ {entry.valor.toFixed(2)}
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-black text-white group-hover:text-[#FFD700] transition-colors">
-                      R$ {entry.valor.toFixed(2)}
+                  
+                  {/* LISTA DE PRODUTOS DIRETO DA CASH_ENTRY */}
+                  {entry.itens && entry.itens.length > 0 && (
+                    <div className="ml-16 bg-black/40 rounded-xl border border-zinc-900 p-3 space-y-1">
+                      <div className="text-[8px] font-black text-zinc-700 uppercase mb-1 flex items-center gap-1.5">
+                        <Package className="w-3 h-3" /> Itens da Venda
+                      </div>
+                      {entry.itens.map((item, i) => (
+                        <div key={i} className="flex justify-between items-center text-[10px]">
+                          <span className="text-zinc-400 font-medium">{item.qtd}x {item.nome}</span>
+                          <span className="text-zinc-600 font-mono">R$ {((Number(item.preco) || 0) * (Number(item.qtd) || 0)).toFixed(2)}</span>
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>

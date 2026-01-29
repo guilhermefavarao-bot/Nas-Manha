@@ -53,6 +53,7 @@ export interface CashEntry {
   forma: 'Pix' | 'Cartão' | 'Dinheiro';
   valor: number;
   data: string;
+  itens?: ItemPedido[];
 }
 
 export enum Tab {

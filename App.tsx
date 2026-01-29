@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Package, ShoppingCart, DollarSign, Settings, List, Loader2, CheckCircle2, X, Beer, Cloud, CloudOff, RefreshCw, LogOut, ShieldCheck, Users, Lock, ShieldAlert } from 'lucide-react';
-import { Product, Order, CashEntry, Tab, RolePermissions } from './types';
+import { Product, Order, CashEntry, Tab, RolePermissions, ItemPedido } from './types';
 import OrdersSection from './components/OrdersSection';
 import SalesSection from './components/SalesSection';
 import CashierSection from './components/CashierSection';
@@ -52,16 +52,15 @@ const App: React.FC = () => {
     try {
       const [pRes, oRes, hRes, cRes] = await Promise.all([
         supabase.from('products').select('*').order('nome'),
-        supabase.from('orders').select('*').neq('status', 'fechado'),
-        supabase.from('orders').select('*').eq('status', 'fechado').order('data', { ascending: false }).limit(50),
-        supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(50)
+        supabase.from('orders').select('*').order('data', { ascending: false }).limit(200),
+        supabase.from('orders').select('*').eq('status', 'fechado').order('data', { ascending: false }).limit(100),
+        supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(100)
       ]);
 
       if (pRes.error) throw pRes.error;
-      if (oRes.error) throw oRes.error;
-
+      
       setProducts(pRes.data || []);
-      setOrders(oRes.data || []);
+      setOrders(oRes.data || []); 
       setSalesHistory(hRes.data || []);
       setCashier(cRes.data || []);
     } catch (err: any) {
@@ -94,7 +93,6 @@ const App: React.FC = () => {
           setLoading(false);
         }
       } catch (err) {
-        console.error("Auth initialization error:", err);
         setLoading(false);
       }
     };
@@ -157,22 +155,89 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteOrder = async (orderId: number) => {
+    try {
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+      const { error } = await supabase.from('orders').delete().eq('id', orderId);
+      if (error) {
+        addNotification(`Erro ao apagar no banco: ${error.message}`, "error");
+        fetchData();
+      } else {
+        addNotification("Pedido excluído permanentemente!", "success");
+      }
+    } catch (err) {
+      addNotification("Falha de rede ao excluir pedido", "error");
+      fetchData();
+    }
+  };
+
+  const handleQuickSale = async (items: ItemPedido[], total: number, paymentType: string) => {
+    const timestamp = new Date().toISOString();
+    
+    try {
+      // Registrar o pedido fechado (aparecerá na aba Pedidos)
+      const orderPayload = {
+        cliente: "Venda Direta",
+        status: 'fechado',
+        itens: items,
+        total: total,
+        pagamento: paymentType,
+        atendente: user?.email || 'Balcão',
+        data: timestamp
+      };
+
+      const { error: orderError } = await supabase.from('orders').insert(orderPayload);
+      if (orderError) throw orderError;
+
+      // Registrar no caixa (agora com a coluna itens corrigida via SQL)
+      const cashPayload = {
+        cliente: "Venda Direta",
+        forma: paymentType,
+        valor: total,
+        data: timestamp,
+        itens: items
+      };
+      const { error: cashError } = await supabase.from('cash_entries').insert(cashPayload);
+      if (cashError) throw cashError;
+
+      // Baixa de estoque
+      for (const item of items) {
+        const product = products.find(p => p.nome === item.nome);
+        if (product && product.categoria !== 'Combos' && product.categoria !== 'Doses') {
+          await supabase.from('products').update({ qtd: product.qtd - item.qtd }).eq('id', product.id);
+        }
+      }
+
+      addNotification("Venda Direta concluída!", "success");
+      fetchData();
+    } catch (err: any) {
+      addNotification("Erro na venda rápida: " + err.message, "error");
+    }
+  };
+
   const handleAddItemToOrder = async (orderId: number, productId: string, qty: number) => {
     const product = products.find(p => p.id === productId);
     const order = orders.find(o => o.id === orderId);
     if (!product || !order) return;
 
-    // Categorias que não contabilizam estoque
     const skipStock = product.categoria === 'Combos' || product.categoria === 'Doses';
 
     if (!skipStock && product.qtd < qty) {
       return addNotification("Estoque esgotado!", "error");
     }
 
-    const newQty = Number(qty);
-    const newItem = { nome: product.nome, qty: newQty, preco: Number(product.preco), custo: Number(product.custo) };
+    const newQty = Number(qty) || 1;
+    const newItem = { 
+      nome: product.nome, 
+      qtd: newQty, 
+      preco: Number(product.preco) || 0, 
+      custo: Number(product.custo) || 0 
+    };
+    
     const newItens = [...(order.itens || []), newItem];
-    const newTotal = Number(order.total) + (Number(product.preco) * newQty);
+    const currentTotal = Number(order.total) || 0;
+    const itemSubtotal = (Number(product.preco) || 0) * newQty;
+    const newTotal = currentTotal + itemSubtotal;
 
     try {
       const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: newTotal }).eq('id', orderId);
@@ -199,17 +264,19 @@ const App: React.FC = () => {
     let payments: { type: string, value: number }[] = [];
 
     if (typeof paymentInput === 'string') {
-      payments = [{ type: paymentInput, value: Number(order.total) }];
+      payments = [{ type: paymentInput, value: Number(order.total) || 0 }];
     } else if (Array.isArray(paymentInput)) {
       payments = paymentInput;
     }
 
-    const resumoPagto = payments.map(p => `${p.type}: R$${Number(p.value).toFixed(2)}`).join(", ");
-    const cashEntries = payments.map(p => ({
+    const resumoPagto = payments.map(p => `${p.type}: R$${(Number(p.value) || 0).toFixed(2)}`).join(", ");
+    
+    const cashEntriesToInsert = payments.map(p => ({
       cliente: order.cliente,
       forma: p.type,
-      valor: Number(p.value),
-      data: timestamp
+      valor: Number(p.value) || 0,
+      data: timestamp,
+      itens: order.itens
     }));
 
     try {
@@ -219,7 +286,7 @@ const App: React.FC = () => {
         data: timestamp 
       }).eq('id', orderId);
 
-      const { error: cashError } = await supabase.from('cash_entries').insert(cashEntries);
+      const { error: cashError } = await supabase.from('cash_entries').insert(cashEntriesToInsert);
       if (updateError || cashError) throw new Error("Falha ao registrar no caixa");
 
       addNotification("Venda concluída!", "success");
@@ -281,8 +348,31 @@ const App: React.FC = () => {
           
           <main className="max-w-5xl mx-auto p-4 md:p-8 animate-in fade-in duration-700">
             {activeTab === Tab.Menu && hasAccess(Tab.Menu) && <MenuSection products={products} />}
-            {activeTab === Tab.Sales && hasAccess(Tab.Sales) && <SalesSection orders={orders} products={products} salesHistory={salesHistory} onCreateOrder={handleCreateOrder} onAddItem={handleAddItemToOrder} onFinishOrder={handleFinishOrder} onVoidSale={() => {}} />}
-            {activeTab === Tab.Orders && hasAccess(Tab.Orders) && <OrdersSection orders={orders} onReady={async (id) => { await supabase.from('orders').update({status:'pronto'}).eq('id',id); fetchData(); }} onCloseOrder={handleFinishOrder} onDelete={async (id) => { await supabase.from('orders').delete().eq('id',id); fetchData(); }} />}
+            {activeTab === Tab.Sales && hasAccess(Tab.Sales) && (
+              <SalesSection 
+                orders={orders} 
+                products={products} 
+                salesHistory={salesHistory} 
+                onCreateOrder={handleCreateOrder} 
+                onAddItem={handleAddItemToOrder} 
+                onFinishOrder={handleFinishOrder} 
+                onQuickSale={handleQuickSale}
+                onVoidSale={() => {}} 
+              />
+            )}
+            
+            {activeTab === Tab.Orders && hasAccess(Tab.Orders) && (
+              <OrdersSection 
+                orders={orders} 
+                onReady={async (id) => { 
+                  await supabase.from('orders').update({status:'pronto'}).eq('id',id); 
+                  fetchData(); 
+                }} 
+                onCloseOrder={handleFinishOrder} 
+                onDelete={handleDeleteOrder} 
+              />
+            )}
+
             {activeTab === Tab.Cashier && hasAccess(Tab.Cashier) && <CashierSection entries={cashier} salesHistory={salesHistory} />}
             {activeTab === Tab.Admin && hasAccess(Tab.Admin) && <AdminSection products={products} onUpsertProduct={handleUpsertProduct} onDeleteProduct={handleDeleteProduct} />}
             {activeTab === Tab.Team && userRole === 'admin' && <TeamSection atendentePermissions={atendentePermissions} onUpdatePermissions={async (perms) => { await supabase.from('system_configs').upsert({ key: 'atendente_permissions', value: perms }); setAtendentePermissions(perms); addNotification("Configurações Salvas", "success"); }} />}
@@ -291,7 +381,7 @@ const App: React.FC = () => {
           <nav className="fixed bottom-0 left-0 right-0 bg-black/95 backdrop-blur-2xl border-t border-zinc-900 flex justify-around p-3 z-50">
             {(atendentePermissions.menu || userRole === 'admin') && <NavButton active={activeTab === Tab.Menu} onClick={() => setActiveTab(Tab.Menu)} icon={<List />} label="Cardápio" />}
             {(atendentePermissions.sales || userRole === 'admin') && <NavButton active={activeTab === Tab.Sales} onClick={() => setActiveTab(Tab.Sales)} icon={<ShoppingCart />} label="Vendas" />}
-            {(atendentePermissions.orders || userRole === 'admin') && <NavButton active={activeTab === Tab.Orders} onClick={() => setActiveTab(Tab.Orders)} icon={<Package />} label="Pedidos" badge={orders.length} />}
+            {(atendentePermissions.orders || userRole === 'admin') && <NavButton active={activeTab === Tab.Orders} onClick={() => setActiveTab(Tab.Orders)} icon={<Package />} label="Pedidos" badge={orders.filter(o => o.status !== 'fechado').length} />}
             {(atendentePermissions.cashier || userRole === 'admin') && <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />}
             {(atendentePermissions.stock || userRole === 'admin') && <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />}
             {userRole === 'admin' && <NavButton active={activeTab === Tab.Team} onClick={() => setActiveTab(Tab.Team)} icon={<Users />} label="Equipe" />}
