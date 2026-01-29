@@ -10,15 +10,25 @@ interface Props {
 }
 
 const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Pega a data de hoje no formato local YYYY-MM-DD para o input de data
+  const getLocalDateString = (date: Date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = getLocalDateString();
   
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(todayStr);
   const [isExporting, setIsExporting] = useState(false);
 
+  // Função CRÍTICA: Converte a data do banco (UTC) para a data local do usuário para comparação
   const isInRange = (dateStr: string) => {
     if (!dateStr) return false;
-    const itemDate = dateStr.split('T')[0];
+    const localDate = new Date(dateStr);
+    const itemDate = getLocalDateString(localDate);
     return itemDate >= startDate && itemDate <= endDate;
   };
 
@@ -57,13 +67,13 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
 
   const handleThisMonth = () => {
     const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    const firstDay = getLocalDateString(new Date(now.getFullYear(), now.getMonth(), 1));
+    const lastDay = getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 1, 0));
     setStartDate(firstDay);
     setEndDate(lastDay);
   };
 
-  const formatDate = (dateStr: string) => {
+  const formatDateLabel = (dateStr: string) => {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
     return `${day}/${month}/${year}`;
@@ -79,7 +89,7 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
     try {
       const resumoData = [
         { "DESCRICAO": "RELATORIO FINANCEIRO - ADEGA NAS MANHA", "VALOR": "" },
-        { "DESCRICAO": "Periodo", "VALOR": `${formatDate(startDate)} a ${formatDate(endDate)}` },
+        { "DESCRICAO": "Periodo", "VALOR": `${formatDateLabel(startDate)} a ${formatDateLabel(endDate)}` },
         { "DESCRICAO": "", "VALOR": "" },
         { "DESCRICAO": "FATURAMENTO BRUTO TOTAL", "VALOR": metrics.revenue.toFixed(2) },
         { "DESCRICAO": "LUCRO ESTIMADO", "VALOR": profitFiltered.toFixed(2) },
@@ -128,7 +138,7 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
       <div className="bg-[#141414] p-5 rounded-3xl border border-zinc-800 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h2 className="text-[#FFD700] font-black uppercase text-xs tracking-[0.2em] flex items-center gap-2">
-            <Calendar className="w-4 h-4" /> Controle de Período
+            <Calendar className="w-4 h-4" /> Controle Diário
           </h2>
           <div className="flex gap-2 w-full sm:w-auto">
             <button onClick={handleSetToday} className="flex-1 sm:flex-none bg-zinc-900 hover:bg-zinc-800 text-[10px] text-zinc-400 font-black uppercase px-3 py-2 rounded-xl border border-zinc-800 transition-all">Hoje</button>
@@ -139,18 +149,18 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
               className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-black text-[10px] uppercase tracking-widest transition-all ${isExporting ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : 'bg-green-600/10 border-green-600/20 text-green-500 hover:bg-green-600 hover:text-white'}`}
             >
               {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {isExporting ? 'Processando...' : 'Exportar Relatório'}
+              Exportar
             </button>
           </div>
         </div>
         
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-[8px] text-zinc-600 font-black uppercase ml-1">Início</label>
+            <label className="text-[8px] text-zinc-600 font-black uppercase ml-1">Data Início</label>
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white focus:border-[#FFD700] outline-none" />
           </div>
           <div className="space-y-1">
-            <label className="text-[8px] text-zinc-600 font-black uppercase ml-1">Fim</label>
+            <label className="text-[8px] text-zinc-600 font-black uppercase ml-1">Data Fim</label>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white focus:border-[#FFD700] outline-none" />
           </div>
         </div>
@@ -161,19 +171,19 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
           <div className="absolute top-0 right-0 p-6 opacity-10">
             <TrendingUp className="w-24 h-24 text-[#FFD700]" />
           </div>
-          <div className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em] mb-2">Faturamento Total</div>
+          <div className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em] mb-2">Faturamento Total do Dia</div>
           <div className="text-5xl font-black text-[#FFD700] tracking-tighter">R$ {metrics.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
           
           <div className="mt-8 flex items-center gap-4">
             <div className="bg-black/50 border border-zinc-800 p-3 rounded-2xl min-w-[140px]">
-              <div className="text-[8px] text-zinc-600 font-black uppercase mb-1">Lucro Estimado</div>
+              <div className="text-[8px] text-zinc-600 font-black uppercase mb-1">Lucro Líquido</div>
               <div className={`text-lg font-black ${profitFiltered >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 R$ {profitFiltered.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
             </div>
             <div className="flex-1 text-[9px] text-zinc-700 font-medium leading-tight">
               <Info className="w-3 h-3 mb-1" />
-              Calculado sobre {entriesFiltered.length} vendas no período.
+              Sincronizado com o fuso horário local. O faturamento está travado por data.
             </div>
           </div>
         </div>
@@ -187,16 +197,16 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
 
       <div className="bg-[#141414] rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl">
         <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-black/20">
-          <h2 className="text-white font-black uppercase text-[10px] tracking-widest">Entradas Detalhadas</h2>
+          <h2 className="text-white font-black uppercase text-[10px] tracking-widest">Movimentação Diária</h2>
           <span className="text-[9px] font-black text-zinc-500 bg-zinc-900 px-3 py-1 rounded-full uppercase">
-            {entriesFiltered.length} Itens
+            {entriesFiltered.length} Vendas
           </span>
         </div>
         <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
           {entriesFiltered.length === 0 ? (
             <div className="p-16 text-center space-y-4">
               <DollarSign className="w-10 h-10 text-zinc-800 mx-auto" />
-              <p className="text-zinc-700 text-[10px] font-black uppercase tracking-widest">Nenhuma movimentação neste período</p>
+              <p className="text-zinc-700 text-[10px] font-black uppercase tracking-widest">Nenhuma venda registrada para {formatDateLabel(startDate)}</p>
             </div>
           ) : (
             <div className="divide-y divide-zinc-900">
@@ -214,7 +224,7 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
                       <div>
                         <div className="font-black text-white uppercase text-xs">{entry.cliente}</div>
                         <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-tight mt-1">
-                          {entry.forma} • {new Date(entry.data).toLocaleString('pt-BR')}
+                          {entry.forma} • {new Date(entry.data).toLocaleTimeString('pt-BR')}
                         </div>
                       </div>
                     </div>
@@ -225,11 +235,10 @@ const CashierSection: React.FC<Props> = ({ entries, salesHistory }) => {
                     </div>
                   </div>
                   
-                  {/* LISTA DE PRODUTOS DIRETO DA CASH_ENTRY */}
                   {entry.itens && entry.itens.length > 0 && (
                     <div className="ml-16 bg-black/40 rounded-xl border border-zinc-900 p-3 space-y-1">
                       <div className="text-[8px] font-black text-zinc-700 uppercase mb-1 flex items-center gap-1.5">
-                        <Package className="w-3 h-3" /> Itens da Venda
+                        <Package className="w-3 h-3" /> Detalhes dos Itens
                       </div>
                       {entry.itens.map((item, i) => (
                         <div key={i} className="flex justify-between items-center text-[10px]">

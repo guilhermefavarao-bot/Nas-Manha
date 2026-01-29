@@ -12,7 +12,14 @@ interface Props {
 }
 
 const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelete }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const getLocalDateString = (date: Date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = getLocalDateString();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aberto' | 'pronto' | 'fechado'>('aberto');
   const [startDate, setStartDate] = useState(todayStr);
@@ -23,7 +30,9 @@ const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelet
 
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      const orderDate = o.data.split('T')[0];
+      const localDate = new Date(o.data);
+      const orderDate = getLocalDateString(localDate);
+      
       const matchesSearch = o.cliente.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'todos' || o.status === statusFilter;
       const matchesDate = statusFilter !== 'fechado' || (orderDate >= startDate && orderDate <= endDate);
@@ -36,7 +45,8 @@ const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelet
 
   const handleExportXLSX = () => {
     const closedOrders = orders.filter(o => {
-      const orderDate = o.data.split('T')[0];
+      const localDate = new Date(o.data);
+      const orderDate = getLocalDateString(localDate);
       return o.status === 'fechado' && orderDate >= startDate && orderDate <= endDate;
     });
 
@@ -122,7 +132,7 @@ const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelet
             className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600/10 border border-green-600/20 text-green-500 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-green-600 hover:text-white transition-all disabled:opacity-30"
           >
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-            Exportar Vendas
+            Exportar
           </button>
         </div>
 
