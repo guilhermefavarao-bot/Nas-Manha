@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Package, Search, Edit2, Trash2, FileSpreadsheet, Loader2, Upload, Download, X, Save, Plus, AlertTriangle, Layers, List, CheckCircle, MinusCircle } from 'lucide-react';
+import { Package, Search, Edit2, Trash2, FileSpreadsheet, Loader2, Upload, Download, X, Save, Plus, AlertTriangle, Layers, List, CheckCircle, MinusCircle, DollarSign, Tag } from 'lucide-react';
 import { Product, Category } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -50,7 +50,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
     setEditingId(p.id);
     setNome(p.nome);
     setPreco(p.preco.toString());
-    setCusto(p.custo.toString());
+    setCusto(p.custo ? p.custo.toString() : '0');
     setQtd(p.qtd.toString());
     setCategoria((p.categoria as Category) || 'Adega');
     setShowForm(true);
@@ -92,12 +92,14 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
     const ws = XLSX.utils.json_to_sheet(products.map(p => ({
       "Item": p.nome,
       "Categoria": p.categoria || 'Adega',
-      "Preço": p.preco,
-      "Estoque": p.qtd
+      "Preço de Venda": p.preco,
+      "Custo Unitário": p.custo || 0,
+      "Estoque": p.qtd,
+      "Valor Total em Estoque (Custo)": ((p.custo || 0) * p.qtd).toFixed(2)
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Estoque");
-    XLSX.writeFile(wb, `ESTOQUE_ADEGA_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
+    XLSX.writeFile(wb, `ESTOQUE_COMPLETO_ADEGA_${new Date().toLocaleDateString().replace(/\//g, '-')}.xlsx`);
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,19 +113,19 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
         const wb = XLSX.read(bstr, { type: 'binary' });
         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
         for (const item of data) {
-          const pName = item.nome || item.Item || item.NOME;
+          const pName = item.nome || item.Item || item.NOME || item.item;
           if (pName) {
             await onUpsertProduct({
               nome: String(pName).trim(),
-              preco: Number(item.preco || item.Preço || 0),
-              custo: Number(item.custo || 0),
-              qtd: Number(item.qtd || item.Estoque || 0),
-              categoria: (item.categoria || 'Adega') as Category
+              preco: Number(item.preco || item.Preço || item['Preço de Venda'] || 0),
+              custo: Number(item.custo || item.Custo || item['Custo Unitário'] || 0),
+              qtd: Number(item.qtd || item.Estoque || item.estoque || 0),
+              categoria: (item.categoria || item.Categoria || 'Adega') as Category
             });
           }
         }
-        alert("Produtos importados!");
-      } catch (err) { alert("Erro na importação."); } finally { setIsImporting(false); }
+        alert("Produtos importados com sucesso!");
+      } catch (err) { alert("Erro na importação. Verifique o formato do arquivo."); } finally { setIsImporting(false); }
     };
     reader.readAsBinaryString(file);
   };
@@ -139,11 +141,11 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={handleExportStock} className="flex items-center gap-2 px-3 py-2 bg-green-600/10 border border-green-600/20 rounded-xl text-[9px] font-black uppercase text-green-500 hover:bg-green-600 hover:text-white transition-all">
-            <FileSpreadsheet className="w-4 h-4" /> Exportar
+            <FileSpreadsheet className="w-4 h-4" /> Exportar Planilha
           </button>
           <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[9px] font-black uppercase text-zinc-400 hover:text-[#FFD700] transition-all">
-            <Upload className="w-4 h-4" /> Importar
+            <Upload className="w-4 h-4" /> Importar Planilha
           </button>
           <button onClick={() => setShowForm(!showForm)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${showForm ? 'bg-zinc-800 text-zinc-400' : 'bg-[#FFD700] text-black hover:scale-105 shadow-lg'}`}>
             {showForm ? <X className="w-4 h-4"/> : <Plus className="w-4 h-4"/>} 
@@ -155,7 +157,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
       {showForm && (
         <div className="bg-[#111111] p-8 rounded-[3rem] border border-zinc-800 shadow-2xl animate-in slide-in-from-top-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 md:col-span-2">
               <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Nome do Item</label>
               <input type="text" placeholder="Nome do produto" value={nome} onChange={e => setNome(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
             </div>
@@ -170,18 +172,22 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Preço de Venda (R$)</label>
-              <input type="text" placeholder="0,00" value={preco} onChange={e => setPreco(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
+              <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Estoque Atual</label>
+              <input type="number" placeholder="0" value={qtd} onChange={e => setQtd(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Quantidade</label>
-              <input type="number" placeholder="0" value={qtd} onChange={e => setQtd(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
+              <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Custo Unitário (R$)</label>
+              <input type="text" placeholder="0,00" value={custo} onChange={e => setCusto(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-blue-500 outline-none" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[9px] text-zinc-600 font-black uppercase ml-2 tracking-widest">Preço de Venda (R$)</label>
+              <input type="text" placeholder="0,00" value={preco} onChange={e => setPreco(e.target.value)} className="w-full bg-black border border-zinc-800 rounded-2xl p-5 text-white text-sm focus:border-[#FFD700] outline-none" />
             </div>
           </div>
           <div className="flex gap-3">
             <button onClick={handleCancel} className="flex-1 bg-zinc-900 text-zinc-400 font-black py-5 rounded-3xl uppercase text-xs">Cancelar</button>
             <button onClick={handleSaveProduct} disabled={isSaving} className="flex-[2] bg-[#FFD700] text-black font-black py-5 rounded-3xl uppercase text-xs tracking-[0.4em] shadow-2xl flex justify-center items-center gap-3">
-              {isSaving && <Loader2 className="w-5 h-5 animate-spin" />} {editingId ? 'Salvar Edição' : 'Confirmar Cadastro'}
+              {isSaving && <Loader2 className="w-5 h-5 animate-spin" />} {editingId ? 'Salvar Alterações' : 'Confirmar Cadastro'}
             </button>
           </div>
         </div>
@@ -211,10 +217,10 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
           const isLivre = p.categoria === 'Combos' || p.categoria === 'Doses';
           const isZerado = !isLivre && p.qtd <= 0;
           return (
-            <div key={p.id} className={`bg-[#111111] p-6 rounded-[2rem] border transition-all ${isZerado ? 'border-red-900/40 bg-red-900/5' : 'border-zinc-900'}`}>
+            <div key={p.id} className={`bg-[#111111] p-6 rounded-[2rem] border transition-all ${isZerado ? 'border-red-900/40 bg-red-900/5' : 'border-zinc-900 hover:border-zinc-700'}`}>
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-6">
-                  <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center font-black text-xl ${isZerado ? 'bg-red-900/20 text-red-500' : 'bg-zinc-900 text-zinc-600'}`}>
+                  <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center font-black text-xl ${isZerado ? 'bg-red-900/20 text-red-500 border-red-800' : 'bg-zinc-900 text-zinc-600 border-zinc-800'}`}>
                     {p.nome[0].toUpperCase()}
                   </div>
                   <div>
@@ -222,8 +228,15 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
                       <div className={`font-black uppercase text-sm tracking-widest ${isZerado ? 'text-red-400' : 'text-white'}`}>{p.nome}</div>
                       <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-md border border-zinc-800 text-zinc-500">{p.categoria || 'Adega'}</span>
                     </div>
-                    <div className="flex gap-6 mt-2">
-                      <span className="text-[#FFD700] text-[10px] font-black tracking-widest">R$ {Number(p.preco).toFixed(2)}</span>
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2">
+                      <div className="flex items-center gap-1.5">
+                        <Tag className="w-3 h-3 text-zinc-600" />
+                        <span className="text-[#FFD700] text-[10px] font-black tracking-widest">Venda: R$ {Number(p.preco).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <DollarSign className="w-3 h-3 text-zinc-700" />
+                        <span className="text-zinc-500 text-[10px] font-black tracking-widest">Custo: R$ {Number(p.custo || 0).toFixed(2)}</span>
+                      </div>
                       <span className={`text-[10px] font-black uppercase tracking-widest ${isZerado ? 'text-red-500 flex items-center gap-1' : 'text-zinc-500'}`}>
                         {isZerado && <AlertTriangle className="w-3 h-3"/>}
                         {isLivre ? 'Disponibilidade Livre' : `Em Estoque: ${p.qtd}`}
@@ -232,13 +245,18 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
                   </div>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                   <button onClick={() => handleEdit(p)} className="flex-1 sm:flex-none p-3 bg-zinc-900 text-zinc-500 hover:text-white rounded-xl"><Edit2 className="w-4 h-4 mx-auto"/></button>
-                   <button onClick={() => confirm(`Excluir ${p.nome}?`) && onDeleteProduct(p.id)} className="flex-1 sm:flex-none p-3 bg-red-950/20 text-red-500 hover:bg-red-600 rounded-xl"><Trash2 className="w-4 h-4 mx-auto"/></button>
+                   <button onClick={() => handleEdit(p)} className="flex-1 sm:flex-none p-3 bg-zinc-900 text-zinc-500 hover:text-white rounded-xl transition-all"><Edit2 className="w-4 h-4 mx-auto"/></button>
+                   <button onClick={() => confirm(`Excluir ${p.nome}?`) && onDeleteProduct(p.id)} className="flex-1 sm:flex-none p-3 bg-red-950/20 text-red-500 hover:bg-red-600 rounded-xl transition-all"><Trash2 className="w-4 h-4 mx-auto"/></button>
                 </div>
               </div>
             </div>
           );
         })}
+        {filteredProducts.length === 0 && (
+          <div className="col-span-full py-20 text-center border border-dashed border-zinc-900 rounded-[3rem]">
+            <p className="text-zinc-700 font-bold uppercase tracking-widest text-[10px]">Nenhum item encontrado nesta categoria</p>
+          </div>
+        )}
       </div>
     </div>
   );
