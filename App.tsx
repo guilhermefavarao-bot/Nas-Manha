@@ -53,8 +53,8 @@ const App: React.FC = () => {
       const [pRes, oRes, hRes, cRes] = await Promise.all([
         supabase.from('products').select('*').order('nome'),
         supabase.from('orders').select('*').order('data', { ascending: false }).limit(200),
-        supabase.from('orders').select('*').eq('status', 'fechado').order('data', { ascending: false }).limit(100),
-        supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(100)
+        supabase.from('orders').select('*').eq('status', 'fechado').order('data', { ascending: false }).limit(200),
+        supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(200)
       ]);
 
       if (pRes.error) throw pRes.error;
@@ -65,7 +65,7 @@ const App: React.FC = () => {
       setCashier(cRes.data || []);
     } catch (err: any) {
       console.error("Fetch error:", err);
-      addNotification("Erro de conexão com o banco", "error");
+      addNotification("Conexão instável com o servidor", "error");
     } finally {
       setSyncing(false);
       setLoading(false);
@@ -117,11 +117,22 @@ const App: React.FC = () => {
   }, [user, fetchData]);
 
   const handleUpsertProduct = async (p: Partial<Product>) => {
+    if (!p.id) {
+      const alreadyExists = products.find(existing => 
+        existing.nome.toLowerCase().trim() === p.nome?.toLowerCase().trim() && 
+        existing.categoria === p.categoria
+      );
+      if (alreadyExists) {
+        addNotification("Este item já existe nesta categoria!", "error");
+        return;
+      }
+    }
+
     const { error } = await supabase.from('products').upsert(p);
     if (error) {
-      addNotification("Erro: " + error.message, "error");
+      addNotification("Falha ao salvar: " + error.message, "error");
     } else {
-      addNotification("Produto salvo!", "success");
+      addNotification("Estoque atualizado!", "success");
       fetchData();
     }
   };
@@ -129,9 +140,9 @@ const App: React.FC = () => {
   const handleDeleteProduct = async (id: string) => {
     const { error } = await supabase.from('products').delete().eq('id', id);
     if (error) {
-      addNotification("Erro ao excluir", "error");
+      addNotification("Erro ao remover do banco", "error");
     } else {
-      addNotification("Produto removido!", "success");
+      addNotification("Produto excluído!", "success");
       fetchData();
     }
   };
@@ -148,34 +159,26 @@ const App: React.FC = () => {
     };
     const { error } = await supabase.from('orders').insert(payload);
     if (error) {
-      addNotification("Erro ao abrir: " + error.message, "error");
+      addNotification("Erro ao iniciar comanda", "error");
     } else {
-      addNotification("Comanda iniciada!", "success");
+      addNotification("Comanda aberta!", "success");
       fetchData();
     }
   };
 
   const handleDeleteOrder = async (orderId: number) => {
-    try {
-      setOrders(prev => prev.filter(o => o.id !== orderId));
-      const { error } = await supabase.from('orders').delete().eq('id', orderId);
-      if (error) {
-        addNotification(`Erro ao apagar no banco: ${error.message}`, "error");
-        fetchData();
-      } else {
-        addNotification("Pedido excluído permanentemente!", "success");
-      }
-    } catch (err) {
-      addNotification("Falha de rede ao excluir pedido", "error");
+    const { error } = await supabase.from('orders').delete().eq('id', orderId);
+    if (error) {
+      addNotification("Erro ao apagar pedido", "error");
+    } else {
+      addNotification("Pedido removido!", "success");
       fetchData();
     }
   };
 
   const handleQuickSale = async (items: ItemPedido[], total: number, paymentType: string) => {
     const timestamp = new Date().toISOString();
-    
     try {
-      // Registrar o pedido fechado (aparecerá na aba Pedidos)
       const orderPayload = {
         cliente: "Venda Direta",
         status: 'fechado',
@@ -189,7 +192,6 @@ const App: React.FC = () => {
       const { error: orderError } = await supabase.from('orders').insert(orderPayload);
       if (orderError) throw orderError;
 
-      // Registrar no caixa (agora com a coluna itens corrigida via SQL)
       const cashPayload = {
         cliente: "Venda Direta",
         forma: paymentType,
@@ -200,18 +202,18 @@ const App: React.FC = () => {
       const { error: cashError } = await supabase.from('cash_entries').insert(cashPayload);
       if (cashError) throw cashError;
 
-      // Baixa de estoque
+      // Baixa de estoque apenas se não for Dose/Combo
       for (const item of items) {
         const product = products.find(p => p.nome === item.nome);
         if (product && product.categoria !== 'Combos' && product.categoria !== 'Doses') {
-          await supabase.from('products').update({ qtd: product.qtd - item.qtd }).eq('id', product.id);
+          await supabase.from('products').update({ qtd: Math.max(0, product.qtd - item.qtd) }).eq('id', product.id);
         }
       }
 
-      addNotification("Venda Direta concluída!", "success");
+      addNotification("Venda direta concluída!", "success");
       fetchData();
     } catch (err: any) {
-      addNotification("Erro na venda rápida: " + err.message, "error");
+      addNotification("Erro no processamento da venda", "error");
     }
   };
 
@@ -223,7 +225,7 @@ const App: React.FC = () => {
     const skipStock = product.categoria === 'Combos' || product.categoria === 'Doses';
 
     if (!skipStock && product.qtd < qty) {
-      return addNotification("Estoque esgotado!", "error");
+      return addNotification("Quantidade indisponível em estoque!", "error");
     }
 
     const newQty = Number(qty) || 1;
@@ -235,24 +237,20 @@ const App: React.FC = () => {
     };
     
     const newItens = [...(order.itens || []), newItem];
-    const currentTotal = Number(order.total) || 0;
-    const itemSubtotal = (Number(product.preco) || 0) * newQty;
-    const newTotal = currentTotal + itemSubtotal;
+    const newTotal = (Number(order.total) || 0) + ((Number(product.preco) || 0) * newQty);
 
     try {
       const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: newTotal }).eq('id', orderId);
-      
-      let stockError = null;
+      if (orderError) throw orderError;
+
       if (!skipStock) {
-        const { error } = await supabase.from('products').update({ qtd: product.qtd - newQty }).eq('id', productId);
-        stockError = error;
+        await supabase.from('products').update({ qtd: Math.max(0, product.qtd - newQty) }).eq('id', productId);
       }
 
-      if (orderError || stockError) throw new Error("Erro de atualização");
-      addNotification("Lançado!", "success");
+      addNotification("Item lançado!", "success");
       fetchData();
     } catch (err) {
-      addNotification("Erro no lançamento", "error");
+      addNotification("Erro ao lançar item", "error");
     }
   };
 
@@ -270,7 +268,6 @@ const App: React.FC = () => {
     }
 
     const resumoPagto = payments.map(p => `${p.type}: R$${(Number(p.value) || 0).toFixed(2)}`).join(", ");
-    
     const cashEntriesToInsert = payments.map(p => ({
       cliente: order.cliente,
       forma: p.type,
@@ -287,12 +284,12 @@ const App: React.FC = () => {
       }).eq('id', orderId);
 
       const { error: cashError } = await supabase.from('cash_entries').insert(cashEntriesToInsert);
-      if (updateError || cashError) throw new Error("Falha ao registrar no caixa");
+      if (updateError || cashError) throw new Error("Erro no registro financeiro");
 
-      addNotification("Venda concluída!", "success");
+      addNotification("Comanda fechada com sucesso!", "success");
       fetchData();
     } catch (err: any) {
-      addNotification("Erro no fechamento", "error");
+      addNotification("Falha ao encerrar comanda", "error");
     }
   };
 
@@ -314,23 +311,23 @@ const App: React.FC = () => {
       {loading ? (
         <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-[9999]">
           <Loader2 className="w-16 h-16 text-[#FFD700] animate-spin mb-4" />
-          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Iniciando Sistema...</p>
+          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Iniciando Adega Pro...</p>
         </div>
       ) : (
         <>
           <header className="sticky top-0 z-[60] bg-black/80 backdrop-blur-xl border-b border-zinc-900 px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-2 bg-[#FFD700] rounded-xl shadow-[0_0_20px_rgba(255,215,0,0.1)]"><Beer className="w-6 h-6 text-black" /></div>
+              <div className="p-2 bg-[#FFD700] rounded-xl"><Beer className="w-6 h-6 text-black" /></div>
               <div>
                 <h1 className="text-[#FFD700] font-black text-xl uppercase tracking-tighter">Adega Nas Manha</h1>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={`w-2 h-2 rounded-full ${syncing ? 'bg-yellow-500 animate-pulse' : 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]'}`}></div>
-                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{syncing ? 'Sincronizando' : 'Terminal Ativo'}</span>
+                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{syncing ? 'Sincronizando...' : 'Terminal Ativo'}</span>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
-               <button onClick={fetchData} disabled={syncing} className="p-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-400 hover:text-[#FFD700] transition-all disabled:opacity-20"><RefreshCw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} /></button>
+               <button onClick={fetchData} disabled={syncing} className="p-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-400 hover:text-[#FFD700] transition-all"><RefreshCw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} /></button>
                <button onClick={() => supabase.auth.signOut()} className="p-2.5 bg-red-950/10 border border-red-900/20 rounded-xl text-red-500 hover:bg-red-600 hover:text-white transition-all"><LogOut className="w-5 h-5" /></button>
             </div>
           </header>
@@ -360,7 +357,6 @@ const App: React.FC = () => {
                 onVoidSale={() => {}} 
               />
             )}
-            
             {activeTab === Tab.Orders && hasAccess(Tab.Orders) && (
               <OrdersSection 
                 orders={orders} 
@@ -372,10 +368,9 @@ const App: React.FC = () => {
                 onDelete={handleDeleteOrder} 
               />
             )}
-
             {activeTab === Tab.Cashier && hasAccess(Tab.Cashier) && <CashierSection entries={cashier} salesHistory={salesHistory} />}
             {activeTab === Tab.Admin && hasAccess(Tab.Admin) && <AdminSection products={products} onUpsertProduct={handleUpsertProduct} onDeleteProduct={handleDeleteProduct} />}
-            {activeTab === Tab.Team && userRole === 'admin' && <TeamSection atendentePermissions={atendentePermissions} onUpdatePermissions={async (perms) => { await supabase.from('system_configs').upsert({ key: 'atendente_permissions', value: perms }); setAtendentePermissions(perms); addNotification("Configurações Salvas", "success"); }} />}
+            {activeTab === Tab.Team && userRole === 'admin' && <TeamSection atendentePermissions={atendentePermissions} onUpdatePermissions={async (perms) => { await supabase.from('system_configs').upsert({ key: 'atendente_permissions', value: perms }); setAtendentePermissions(perms); addNotification("Permissões atualizadas", "success"); }} />}
           </main>
 
           <nav className="fixed bottom-0 left-0 right-0 bg-black/95 backdrop-blur-2xl border-t border-zinc-900 flex justify-around p-3 z-50">
