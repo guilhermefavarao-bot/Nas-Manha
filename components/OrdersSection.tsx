@@ -9,9 +9,10 @@ interface Props {
   onReady: (id: number) => void;
   onCloseOrder: (id: number, payment: any) => void;
   onDelete: (id: number) => void;
+  onRemoveItem: (orderId: number, itemIdx: number) => void;
 }
 
-const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelete }) => {
+const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelete, onRemoveItem }) => {
   const getLocalDateString = (date: Date = new Date()) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -192,13 +193,24 @@ const OrdersSection: React.FC<Props> = ({ orders, onReady, onCloseOrder, onDelet
               <div className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest border ${order.status === 'fechado' ? 'bg-green-500/10 text-green-500 border-green-500/20' : order.status === 'pronto' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'}`}>{order.status}</div>
             </div>
             
-            <div className="space-y-2 mb-6 bg-black/40 p-4 rounded-2xl border border-zinc-900 min-h-[80px]">
+            <div className="space-y-2 mb-6 bg-black/40 p-4 rounded-2xl border border-zinc-900 min-h-[100px]">
               {order.itens.map((item, idx) => {
                 const itemQtd = getQty(item);
                 const itemPreco = Number(item.preco) || 0;
                 return (
-                  <div key={idx} className="flex justify-between text-xs">
-                    <span className="text-zinc-400 font-medium">{itemQtd}x {item.nome}</span>
+                  <div key={idx} className="flex justify-between items-center text-xs group/item py-1 border-b border-zinc-900/50 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-400 font-medium">{itemQtd}x {item.nome}</span>
+                      {order.status !== 'fechado' && (
+                        <button 
+                          onClick={() => onRemoveItem(order.id, idx)}
+                          className="opacity-0 group-hover/item:opacity-100 p-1 text-zinc-700 hover:text-red-500 transition-all"
+                          title="Estornar este item"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                     <span className="text-zinc-500 font-mono">R$ {(itemQtd * itemPreco).toFixed(2)}</span>
                   </div>
                 );

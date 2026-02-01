@@ -176,6 +176,42 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRemoveItemFromOrder = async (orderId: number, itemIdx: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || !order.itens[itemIdx]) return;
+
+    const itemToRemove = order.itens[itemIdx];
+    const newItens = [...order.itens];
+    newItens.splice(itemIdx, 1);
+    
+    // RECALCULO TOTAL DO ZERO PARA EVITAR BUGS DE SOMA
+    const newTotal = newItens.reduce((acc, item) => {
+      return acc + (Number(item.preco) * Number(item.qtd));
+    }, 0);
+
+    try {
+      const { error: orderError } = await supabase.from('orders').update({ 
+        itens: newItens, 
+        total: newTotal 
+      }).eq('id', orderId);
+      
+      if (orderError) throw orderError;
+
+      // Devolver ao estoque se não for serviço/ilimitado
+      const product = products.find(p => p.nome === itemToRemove.nome);
+      if (product && product.categoria !== 'Combos' && product.categoria !== 'Doses') {
+        await supabase.from('products').update({ 
+          qtd: product.qtd + (Number(itemToRemove.qtd) || 0) 
+        }).eq('id', product.id);
+      }
+
+      addNotification("Item removido e total atualizado!", "success");
+      fetchData();
+    } catch (err) {
+      addNotification("Erro ao remover item", "error");
+    }
+  };
+
   const handleQuickSale = async (items: ItemPedido[], total: number, paymentType: string) => {
     const timestamp = new Date().toISOString();
     try {
@@ -237,7 +273,11 @@ const App: React.FC = () => {
     };
     
     const newItens = [...(order.itens || []), newItem];
-    const newTotal = (Number(order.total) || 0) + ((Number(product.preco) || 0) * newQty);
+    
+    // RECALCULO TOTAL AO ADICIONAR TAMBÉM PARA SEGURANÇA
+    const newTotal = newItens.reduce((acc, item) => {
+      return acc + (Number(item.preco) * Number(item.qtd));
+    }, 0);
 
     try {
       const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: newTotal }).eq('id', orderId);
@@ -366,6 +406,7 @@ const App: React.FC = () => {
                 }} 
                 onCloseOrder={handleFinishOrder} 
                 onDelete={handleDeleteOrder} 
+                onRemoveItem={handleRemoveItemFromOrder}
               />
             )}
             {activeTab === Tab.Cashier && hasAccess(Tab.Cashier) && <CashierSection entries={cashier} salesHistory={salesHistory} />}
