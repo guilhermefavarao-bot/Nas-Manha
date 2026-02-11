@@ -1,5 +1,5 @@
 {
-  "name": "forja-atributo---cloud-pro",
+  "name": "adega-nas-manha---pro-sales",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,13 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.36.0",
     "react": "^19.2.3",
+    "@google/genai": "^1.37.0",
     "react-dom": "^19.2.3",
     "lucide-react": "^0.562.0",
-    "jszip": "^3.10.1",
-    "xlsx": "^0.18.5",
-    "@vercel/node": "^5.5.28"
+    "xlsx": "0.18.5",
+    "@supabase/supabase-js": "2.45.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

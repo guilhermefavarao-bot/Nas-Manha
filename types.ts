@@ -1,45 +1,67 @@
 
-export interface CTeData {
+export type Role = 'admin' | 'atendente';
+
+export interface User {
   id: string;
-  filename: string;
-  nCT: string;
-  chave: string;
-  origem: string;
-  origemUF: string;
-  destino: string;
-  destinoUF: string;
-  valor: string;
-  caracteristicasAdicionais: string | null;
-  tipoOperacao: string;
-  tipoVeiculo: string;
-  tipoCobranca: string;
-  rota: string;
-  fretePeso: string;
-  cfop: string;
-  numeroLT: string;
-  romaneio: string;
-  emitente: string;
-  categoriaCarga: string; 
-  cnpjExpedidor: string;
-  observacao: string;
-  camposDinamicos: Record<string, string>;
-  pathOperacao: string;
-  pathVeiculo: string;
-  pathCobranca: string;
-  pathRota: string;
-  pathFretePeso: string;
-  pathCfop: string;
-  pathNumeroLT: string;
-  pathRomaneio: string;
-  pathEmitente: string;
-  pathCategoriaCarga: string; 
-  pathCnpjExpedidor: string;
-  pathObservacao: string;
-  vBC: string;
-  pICMS: string;
-  vICMS: string;
-  km: string;
-  rawXml: string; // Armazena o XML bruto para o Explorador
+  nome: string;
+  email: string;
+  senha: string;
+  role: Role;
 }
 
-export type AppTab = 'upload' | 'consult' | 'tags' | 'info' | 'fiscal' | 'xmlSearch' | 'export';
+export interface RolePermissions {
+  menu: boolean;
+  sales: boolean;
+  orders: boolean;
+  cashier: boolean;
+  stock: boolean;
+}
+
+export type Category = 'Adega' | 'Tabacaria' | 'Combos' | 'Doses' | 'Comidas';
+
+export interface Product {
+  id: string;
+  nome: string;
+  preco: number;
+  custo: number;
+  qtd: number;
+  categoria?: Category;
+}
+
+export interface ItemPedido {
+  nome: string;
+  qtd: number;
+  preco: number;
+  custo?: number;
+}
+
+export interface Order {
+  id: number;
+  cliente: string;
+  telefone: string;
+  atendente: string;
+  itens: ItemPedido[];
+  total: number;
+  data: string;
+  status: 'aberto' | 'pronto' | 'fechado' | 'cancelado' | 'consumo_interno';
+  pagamento?: string; 
+}
+
+export interface CashEntry {
+  id: string;
+  cliente: string;
+  forma: 'Pix' | 'Cartão' | 'Dinheiro' | 'Cortesia';
+  valor: number;
+  data: string;
+  itens?: ItemPedido[];
+}
+
+export enum Tab {
+  Menu = 'menu',
+  Orders = 'orders',
+  Sales = 'sales',
+  Cashier = 'cashier',
+  Admin = 'admin',
+  Team = 'team',
+  Donos = 'donos'
+}

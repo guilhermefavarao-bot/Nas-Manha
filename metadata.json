@@ -1,7 +1,5 @@
 {
-  "name": "Forja Atributo - Cloud Pro",
-  "description": "A high-performance CTe attribute mapping tool that processes XML files, extracts dynamic observations, and generates structured CSV exports with AI-powered batch insights.",
-  "requestFramePermissions": [
-    "geolocation"
-  ]
+  "name": "Adega Nas Manha - Pro Sales",
+  "description": "Sistema de gestão de vendas e estoque local (offline) com suporte a importação/exportação XLSX.",
+  "requestFramePermissions": []
 }
