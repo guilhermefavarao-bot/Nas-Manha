@@ -79,29 +79,37 @@ const App: React.FC = () => {
   const fetchPermissions = useCallback(async () => {
     try {
       const { data } = await supabase.from('system_configs').select('value').eq('key', 'atendente_permissions').single();
-      if (data && data.value) setAtendentePermissions(data.value);
-    } catch (e) {}
+      if (data && data.value) {
+        setAtendentePermissions(data.value);
+      }
+    } catch (e) {
+      console.warn("Permissões não encontradas no banco, usando padrão.");
+    }
   }, []);
 
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        
-        if (session?.user) {
-          setUser(session.user);
-          // Verifica role tanto no metadata quanto no app_metadata para garantir
-          const role = session.user.user_metadata?.role || session.user.app_metadata?.role || 'atendente';
-          setUserRole(role);
-          fetchPermissions();
-        } else {
-          setLoading(false);
-        }
-      } catch (err) {
-        setLoading(false);
+  const initAuth = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      
+      if (session?.user) {
+        setUser(session.user);
+        // Tenta pegar role de metadatas variados para evitar bugs de produção
+        const role = session.user.user_metadata?.role || 
+                     session.user.app_metadata?.role || 
+                     (session.user.email?.includes('admin') ? 'admin' : 'atendente');
+        setUserRole(role);
+        await fetchPermissions();
       }
-    };
+    } catch (err) {
+      console.error("Auth init error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchPermissions]);
+
+  useEffect(() => {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -113,11 +121,10 @@ const App: React.FC = () => {
       } else {
         setUser(null);
         setUserRole(null);
-        setLoading(false);
       }
     });
     return () => subscription.unsubscribe();
-  }, [fetchPermissions]);
+  }, [initAuth, fetchPermissions]);
 
   useEffect(() => {
     if (user) fetchData();
@@ -355,10 +362,9 @@ const App: React.FC = () => {
 
   // Lógica Robusta de Acesso
   const hasAccess = (tab: Tab) => {
-    // Admin tem acesso TOTAL e IRRESTRITO sempre
+    // Admin tem acesso TOTAL sempre
     if (userRole === 'admin') return true;
     
-    // Para atendentes, verificamos as permissões configuradas pelo admin
     const perms = atendentePermissions;
     switch(tab) {
       case Tab.Menu: return perms.menu;
@@ -367,19 +373,19 @@ const App: React.FC = () => {
       case Tab.Cashier: return perms.cashier;
       case Tab.Admin: return perms.stock;
       case Tab.Donos: return perms.donos;
-      case Tab.Team: return false; // Somente Admin acessa Equipe
+      case Tab.Team: return false; // Equipe é apenas Admin
       default: return false;
     }
   };
 
-  if (!user && !loading) return <LoginScreen onLoginSuccess={() => {}} />;
+  if (!user && !loading) return <LoginScreen onLoginSuccess={initAuth} />;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] pb-24">
       {loading ? (
         <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-[9999]">
           <Loader2 className="w-16 h-16 text-[#FFD700] animate-spin mb-4" />
-          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Iniciando Terminal...</p>
+          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Autenticando Terminal...</p>
         </div>
       ) : (
         <>
@@ -390,7 +396,7 @@ const App: React.FC = () => {
                 <h1 className="text-[#FFD700] font-black text-xl uppercase tracking-tighter leading-none">Adega Nas Manha</h1>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={`w-2 h-2 rounded-full ${syncing ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
-                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{syncing ? 'Sincronizando...' : 'Conectado'}</span>
+                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{userRole?.toUpperCase()} | {syncing ? 'Sincronizando...' : 'Conectado'}</span>
                 </div>
               </div>
             </div>
@@ -443,9 +449,9 @@ const App: React.FC = () => {
             {hasAccess(Tab.Menu) && <NavButton active={activeTab === Tab.Menu} onClick={() => setActiveTab(Tab.Menu)} icon={<List />} label="Cardápio" />}
             {hasAccess(Tab.Sales) && <NavButton active={activeTab === Tab.Sales} onClick={() => setActiveTab(Tab.Sales)} icon={<ShoppingCart />} label="Vendas" />}
             {hasAccess(Tab.Orders) && <NavButton active={activeTab === Tab.Orders} onClick={() => setActiveTab(Tab.Orders)} icon={<Package />} label="Pedidos" badge={orders.filter(o => o.status === 'aberto' || o.status === 'pronto').length} />}
-            {(userRole === 'admin' || hasAccess(Tab.Donos)) && <NavButton active={activeTab === Tab.Donos} onClick={() => setActiveTab(Tab.Donos)} icon={<Star />} label="Donos" />}
-            {(userRole === 'admin' || hasAccess(Tab.Cashier)) && <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />}
-            {(userRole === 'admin' || hasAccess(Tab.Admin)) && <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />}
+            {hasAccess(Tab.Donos) && <NavButton active={activeTab === Tab.Donos} onClick={() => setActiveTab(Tab.Donos)} icon={<Star />} label="Donos" />}
+            {hasAccess(Tab.Cashier) && <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />}
+            {hasAccess(Tab.Admin) && <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />}
             {userRole === 'admin' && <NavButton active={activeTab === Tab.Team} onClick={() => setActiveTab(Tab.Team)} icon={<Users />} label="Equipe" />}
           </nav>
         </>
@@ -455,10 +461,10 @@ const App: React.FC = () => {
 };
 
 const NavButton = ({ active, onClick, icon, label, badge }: any) => (
-  <button onClick={onClick} className="relative flex flex-col items-center gap-1.5 px-4 py-2 flex-shrink-0">
-    <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-[#FFD700] text-black scale-110' : 'text-zinc-700'}`}>{icon}</div>
+  <button onClick={onClick} className="relative flex flex-col items-center gap-1.5 px-4 py-2 flex-shrink-0 min-w-[64px]">
+    <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-[#FFD700] text-black scale-110' : 'text-zinc-700 hover:text-zinc-500'}`}>{icon}</div>
     <span className={`text-[8px] font-black uppercase tracking-widest ${active ? 'text-[#FFD700]' : 'text-zinc-800'}`}>{label}</span>
-    {badge > 0 && <span className="absolute top-2 right-3 bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black border-2 border-black">{badge}</span>}
+    {badge > 0 && <span className="absolute top-2 right-2 bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black border-2 border-black">{badge}</span>}
   </button>
 );
 
