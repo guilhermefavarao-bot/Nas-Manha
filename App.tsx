@@ -60,14 +60,15 @@ const App: React.FC = () => {
       if (pRes.error) throw pRes.error;
       
       const allOrders = oRes.data || [];
-      setProducts(pRes.data || []);
+      const allProducts = pRes.data || [];
+      
+      setProducts(allProducts);
       setOrders(allOrders); 
-      // O histórico de vendas são as ordens fechadas
       setSalesHistory(allOrders.filter(o => o.status === 'fechado'));
       setCashier(cRes.data || []);
     } catch (err: any) {
       console.error("Fetch error:", err);
-      addNotification("Conexão instável com o servidor", "error");
+      addNotification("Erro na sincronização", "error");
     } finally {
       setSyncing(false);
       setLoading(false);
@@ -117,6 +118,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user) fetchData();
   }, [user, fetchData]);
+
+  // Sincronizar ao mudar de aba para garantir dados frescos
+  useEffect(() => {
+    if (user && !loading) {
+      fetchData();
+    }
+  }, [activeTab]);
 
   const handleUpsertProduct = async (p: Partial<Product>) => {
     const { error } = await supabase.from('products').upsert(p);
@@ -173,7 +181,7 @@ const App: React.FC = () => {
       }
       const { error } = await supabase.from('orders').delete().eq('id', orderId);
       if (error) throw error;
-      addNotification("Comanda removida e estoque restaurado!", "success");
+      addNotification("Comanda removida!", "success");
       fetchData();
     } catch (err: any) {
       addNotification("Erro ao remover comanda", "error");
@@ -191,7 +199,7 @@ const App: React.FC = () => {
     const newTotal = newItens.reduce((acc, item) => acc + (Number(item.preco) * Number(item.qtd)), 0);
 
     try {
-      const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: newTotal }).eq('id', orderId);
+      const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: Number(newTotal) }).eq('id', orderId);
       if (orderError) throw orderError;
 
       const product = products.find(p => p.nome === itemToRemove.nome);
@@ -212,7 +220,6 @@ const App: React.FC = () => {
   const handleQuickSale = async (items: ItemPedido[], total: number, paymentType: string) => {
     const timestamp = new Date().toISOString();
     try {
-      // 1. Criar Ordem Fechada (Histórico)
       const orderPayload = {
         cliente: "Venda Direta",
         status: 'fechado',
@@ -226,7 +233,6 @@ const App: React.FC = () => {
       const { error: orderError } = await supabase.from('orders').insert(orderPayload);
       if (orderError) throw orderError;
 
-      // 2. Criar Entrada no Caixa
       const cashPayload = { 
         cliente: "Venda Direta", 
         forma: paymentType, 
@@ -237,7 +243,6 @@ const App: React.FC = () => {
       const { error: cashError } = await supabase.from('cash_entries').insert(cashPayload);
       if (cashError) throw cashError;
 
-      // 3. Baixa de Estoque
       for (const item of items) {
         const product = products.find(p => p.nome === item.nome);
         if (product && product.categoria !== 'Combos') {
@@ -250,7 +255,7 @@ const App: React.FC = () => {
       fetchData();
     } catch (err: any) {
       console.error("QuickSale Error:", err);
-      addNotification("Erro no processamento da venda", "error");
+      addNotification("Erro na venda rápida", "error");
     }
   };
 
@@ -290,10 +295,10 @@ const App: React.FC = () => {
         }).eq('id', productId);
       }
 
-      addNotification("Item lançado!", "success");
+      addNotification("Lançado!", "success");
       fetchData();
     } catch (err) {
-      addNotification("Erro ao lançar item", "error");
+      addNotification("Erro ao lançar", "error");
     }
   };
 
@@ -302,29 +307,22 @@ const App: React.FC = () => {
     if (!order) return;
     const timestamp = new Date().toISOString();
     
-    // Tratamento para Consumo Interno (Donos)
     if (order.status === 'consumo_interno') {
       try {
-        await supabase.from('orders').update({ 
-          status: 'fechado', 
-          pagamento: 'CONSUMO INTERNO', 
-          data: timestamp 
-        }).eq('id', orderId);
+        await supabase.from('orders').update({ status: 'fechado', pagamento: 'CONSUMO INTERNO', data: timestamp }).eq('id', orderId);
         addNotification("Consumo interno finalizado!", "success");
         fetchData();
         return;
       } catch (err) {
-        addNotification("Falha ao fechar consumo", "error");
+        addNotification("Erro ao fechar consumo", "error");
         return;
       }
     }
 
-    // Tratamento para Vendas Normais
     let payments = typeof paymentInput === 'string' ? [{ type: paymentInput, value: Number(order.total) }] : paymentInput;
     const resumoPagto = payments.map((p:any) => `${p.type}: R$${Number(p.value).toFixed(2)}`).join(", ");
 
     try {
-      // 1. Atualizar status da Ordem para aparecer no histórico
       const { error: updateError } = await supabase.from('orders').update({ 
         status: 'fechado', 
         pagamento: resumoPagto, 
@@ -334,7 +332,6 @@ const App: React.FC = () => {
       
       if (updateError) throw updateError;
 
-      // 2. Registrar no Caixa (Cashier)
       const cashEntriesToInsert = payments.map((p:any) => ({ 
         cliente: order.cliente, 
         forma: p.type, 
@@ -349,8 +346,7 @@ const App: React.FC = () => {
       addNotification("Comanda fechada!", "success");
       fetchData();
     } catch (err: any) {
-      console.error("FinishOrder Error:", err);
-      addNotification("Falha ao encerrar comanda", "error");
+      addNotification("Erro ao encerrar", "error");
     }
   };
 
@@ -364,11 +360,11 @@ const App: React.FC = () => {
   if (!user && !loading) return <LoginScreen onLoginSuccess={() => {}} />;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] pb-24 selection:bg-[#FFD700] selection:text-black">
+    <div className="min-h-screen bg-[#0a0a0a] pb-24">
       {loading ? (
         <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-[9999]">
           <Loader2 className="w-16 h-16 text-[#FFD700] animate-spin mb-4" />
-          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Iniciando Adega Pro...</p>
+          <p className="text-[#FFD700] font-black uppercase text-[10px] tracking-widest animate-pulse">Iniciando Terminal...</p>
         </div>
       ) : (
         <>
@@ -376,10 +372,10 @@ const App: React.FC = () => {
             <div className="flex items-center gap-4">
               <div className="p-2 bg-[#FFD700] rounded-xl"><Beer className="w-6 h-6 text-black" /></div>
               <div>
-                <h1 className="text-[#FFD700] font-black text-xl uppercase tracking-tighter">Adega Nas Manha</h1>
+                <h1 className="text-[#FFD700] font-black text-xl uppercase tracking-tighter leading-none">Adega Nas Manha</h1>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={`w-2 h-2 rounded-full ${syncing ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
-                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{syncing ? 'Sincronizando...' : 'Terminal Ativo'}</span>
+                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{syncing ? 'Sincronizando...' : 'Conectado'}</span>
                 </div>
               </div>
             </div>
