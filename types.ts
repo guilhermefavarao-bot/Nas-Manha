@@ -15,6 +15,7 @@ export interface RolePermissions {
   orders: boolean;
   cashier: boolean;
   stock: boolean;
+  donos: boolean;
 }
 
 export type Category = 'Adega' | 'Tabacaria' | 'Combos' | 'Doses' | 'Comidas';

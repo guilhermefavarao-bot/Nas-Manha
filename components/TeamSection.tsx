@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { Users, ShieldCheck, UserPlus, Mail, Lock, Loader2, Eye, EyeOff, Info } from 'lucide-react';
+import { Users, ShieldCheck, UserPlus, Mail, Lock, Loader2, Star } from 'lucide-react';
 import { RolePermissions } from '../types';
-import { supabase } from '../lib/supabase'; // Importando a conexão central
+import { supabase } from '../lib/supabase';
 
 interface Props {
   atendentePermissions: RolePermissions;
@@ -28,7 +28,6 @@ const TeamSection: React.FC<Props> = ({ atendentePermissions, onUpdatePermission
     
     setIsCreatingUser(true);
     try {
-      // Usando a instância central 'supabase' para evitar erros de chave inválida
       const { error } = await supabase.auth.signUp({
         email: newUserEmail,
         password: newUserPass,
@@ -40,7 +39,7 @@ const TeamSection: React.FC<Props> = ({ atendentePermissions, onUpdatePermission
 
       if (error) throw error;
       
-      alert(`SUCESSO! Novo ${newUserRole.toUpperCase()} cadastrado.\nSolicite ao colaborador que verifique o e-mail (se a confirmação estiver ativa).`);
+      alert(`SUCESSO! Novo ${newUserRole.toUpperCase()} cadastrado.\nSolicite ao colaborador que verifique o e-mail.`);
       setNewUserEmail(''); 
       setNewUserPass('');
     } catch (err: any) {
@@ -70,6 +69,7 @@ const TeamSection: React.FC<Props> = ({ atendentePermissions, onUpdatePermission
           <PermissionToggle label="Pedidos" active={atendentePermissions.orders} onClick={() => togglePermission('orders')} />
           <PermissionToggle label="Caixa" active={atendentePermissions.cashier} onClick={() => togglePermission('cashier')} />
           <PermissionToggle label="Estoque" active={atendentePermissions.stock} onClick={() => togglePermission('stock')} />
+          <PermissionToggle label="Donos" active={atendentePermissions.donos} onClick={() => togglePermission('donos')} icon={<Star className="w-5 h-5" />} />
         </div>
       </div>
 
@@ -124,9 +124,12 @@ const TeamSection: React.FC<Props> = ({ atendentePermissions, onUpdatePermission
   );
 };
 
-const PermissionToggle: React.FC<{ label: string, active: boolean, onClick: () => void }> = ({ label, active, onClick }) => (
+const PermissionToggle: React.FC<{ label: string, active: boolean, onClick: () => void, icon?: React.ReactNode }> = ({ label, active, onClick, icon }) => (
   <button onClick={onClick} className={`flex items-center justify-between p-6 rounded-3xl border transition-all ${active ? 'bg-zinc-900 border-[#FFD700]/30 text-white' : 'bg-black border-zinc-800 text-zinc-600'}`}>
-    <span className="font-black uppercase text-[10px] tracking-widest">{label}</span>
+    <div className="flex items-center gap-3">
+      {icon}
+      <span className="font-black uppercase text-[10px] tracking-widest">{label}</span>
+    </div>
     {active ? <ShieldCheck className="w-5 h-5 text-[#FFD700]" /> : <Lock className="w-5 h-5 text-zinc-800" />}
   </button>
 );

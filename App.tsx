@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Package, ShoppingCart, DollarSign, Settings, List, Loader2, CheckCircle2, X, Beer, Cloud, CloudOff, RefreshCw, LogOut, ShieldCheck, Users, Lock, ShieldAlert, Star } from 'lucide-react';
+import { Package, ShoppingCart, DollarSign, Settings, List, Loader2, Beer, RefreshCw, LogOut, Users, Star } from 'lucide-react';
 import { Product, Order, CashEntry, Tab, RolePermissions, ItemPedido } from './types';
 import OrdersSection from './components/OrdersSection';
 import SalesSection from './components/SalesSection';
@@ -30,7 +30,8 @@ const App: React.FC = () => {
     sales: true,
     orders: true,
     cashier: false,
-    stock: false
+    stock: false,
+    donos: false
   });
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -119,7 +120,6 @@ const App: React.FC = () => {
     if (user) fetchData();
   }, [user, fetchData]);
 
-  // Sincronizar ao mudar de aba para garantir dados frescos
   useEffect(() => {
     if (user && !loading) {
       fetchData();
@@ -352,9 +352,20 @@ const App: React.FC = () => {
 
   const hasAccess = (tab: Tab) => {
     if (userRole === 'admin') return true;
-    if (tab === Tab.Donos) return true;
-    const perms: any = atendentePermissions;
-    return perms[tab] || false;
+    
+    const perms = atendentePermissions;
+    
+    // Mapeamento correto de Tab Enum para RolePermissions keys
+    switch(tab) {
+      case Tab.Menu: return perms.menu;
+      case Tab.Sales: return perms.sales;
+      case Tab.Orders: return perms.orders;
+      case Tab.Cashier: return perms.cashier;
+      case Tab.Admin: return perms.stock;
+      case Tab.Donos: return perms.donos;
+      case Tab.Team: return false; // Somente Admin acessa Equipe
+      default: return false;
+    }
   };
 
   if (!user && !loading) return <LoginScreen onLoginSuccess={() => {}} />;
@@ -425,12 +436,12 @@ const App: React.FC = () => {
           </main>
 
           <nav className="fixed bottom-0 left-0 right-0 bg-black border-t border-zinc-900 flex justify-around p-3 z-50 overflow-x-auto no-scrollbar">
-            <NavButton active={activeTab === Tab.Menu} onClick={() => setActiveTab(Tab.Menu)} icon={<List />} label="Cardápio" />
-            <NavButton active={activeTab === Tab.Sales} onClick={() => setActiveTab(Tab.Sales)} icon={<ShoppingCart />} label="Vendas" />
-            <NavButton active={activeTab === Tab.Orders} onClick={() => setActiveTab(Tab.Orders)} icon={<Package />} label="Pedidos" badge={orders.filter(o => o.status === 'aberto' || o.status === 'pronto').length} />
-            <NavButton active={activeTab === Tab.Donos} onClick={() => setActiveTab(Tab.Donos)} icon={<Star />} label="Donos" />
-            <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />
-            <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />
+            {hasAccess(Tab.Menu) && <NavButton active={activeTab === Tab.Menu} onClick={() => setActiveTab(Tab.Menu)} icon={<List />} label="Cardápio" />}
+            {hasAccess(Tab.Sales) && <NavButton active={activeTab === Tab.Sales} onClick={() => setActiveTab(Tab.Sales)} icon={<ShoppingCart />} label="Vendas" />}
+            {hasAccess(Tab.Orders) && <NavButton active={activeTab === Tab.Orders} onClick={() => setActiveTab(Tab.Orders)} icon={<Package />} label="Pedidos" badge={orders.filter(o => o.status === 'aberto' || o.status === 'pronto').length} />}
+            {hasAccess(Tab.Donos) && <NavButton active={activeTab === Tab.Donos} onClick={() => setActiveTab(Tab.Donos)} icon={<Star />} label="Donos" />}
+            {hasAccess(Tab.Cashier) && <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />}
+            {hasAccess(Tab.Admin) && <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />}
             {userRole === 'admin' && <NavButton active={activeTab === Tab.Team} onClick={() => setActiveTab(Tab.Team)} icon={<Users />} label="Equipe" />}
           </nav>
         </>
