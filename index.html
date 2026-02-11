@@ -4,47 +4,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Adega Nas Manha - Pro Sales System</title>
+    <title>Forja Atributo - Cloud Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0a0a0a;
-            color: #ffffff;
-            margin: 0;
-            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
         }
+        /* Custom scrollbar */
         ::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
+            height: 6px;
         }
         ::-webkit-scrollbar-track {
-            background: #141414;
+            background: #f1f1f1;
         }
         ::-webkit-scrollbar-thumb {
-            background: #FFD700;
-            border-radius: 4px;
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Animação do Caminhão Pulando */
+        @keyframes truck-jump {
+            0%, 100% { transform: translateY(0) scaleX(1); }
+            50% { transform: translateY(-40px) scaleX(0.95) rotate(-2deg); }
+            70% { transform: translateY(0) scaleX(1.05); }
+        }
+        .animate-truck-jump {
+            animation: truck-jump 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) infinite;
         }
     </style>
 <script type="importmap">
 {
   "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.36.0",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "xlsx": "https://esm.sh/xlsx@0.18.5",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1"
+    "jszip": "https://esm.sh/jszip@^3.10.1",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "@vercel/node": "https://esm.sh/@vercel/node@^5.5.28"
   }
 }
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-<body>
+<body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <!-- Script principal que inicia a aplicação React -->
-    <script type="module" src="./index.tsx"></script>
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>
