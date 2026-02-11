@@ -1,7 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
-import { Package, Search, Edit2, Trash2, X, Plus, Filter, AlertCircle, CheckCircle2, MinusCircle } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Package, Search, Edit2, Trash2, X, Plus, AlertCircle, FileUp, FileDown, Loader2 } from 'lucide-react';
 import { Product, Category } from '../types';
+import * as XLSX from 'xlsx';
 
 interface Props {
   products: Product[];
@@ -20,6 +21,9 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'disponivel' | 'zerado'>('todos');
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
@@ -71,19 +75,105 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
     setCategoria('Adega');
   };
 
+  // Funções de Excel
+  const handleExportExcel = () => {
+    if (products.length === 0) return alert("Não há produtos para exportar.");
+    
+    const data = products.map(p => ({
+      "Nome": p.nome,
+      "Preço de Venda": p.preco,
+      "Preço de Custo": p.custo || 0,
+      "Quantidade": p.qtd,
+      "Categoria": p.categoria || "Adega"
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Estoque");
+    XLSX.writeFile(wb, `ESTOQUE_ADEGA_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        for (const row of data as any[]) {
+          const payload: Partial<Product> = {
+            nome: row["Nome"] || row["nome"],
+            preco: Number(row["Preço de Venda"] || row["preco"] || 0),
+            custo: Number(row["Preço de Custo"] || row["custo"] || 0),
+            qtd: Number(row["Quantidade"] || row["qtd"] || 0),
+            categoria: (row["Categoria"] || row["categoria"] || "Adega") as Category
+          };
+
+          // Tenta encontrar produto existente pelo nome para atualizar
+          const existing = products.find(p => p.nome.toLowerCase() === payload.nome?.toLowerCase());
+          if (existing) payload.id = existing.id;
+
+          if (payload.nome) {
+            await onUpsertProduct(payload);
+          }
+        }
+        alert("Importação concluída com sucesso!");
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao processar arquivo. Verifique se o formato está correto.");
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div className="space-y-8 pb-10 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-[#FFD700] font-black text-2xl uppercase tracking-tighter flex items-center gap-3">
           <Package className="w-8 h-8"/> Almoxarifado
         </h2>
-        <button 
-          onClick={() => { editingId ? resetForm() : setShowForm(!showForm) }} 
-          className={`w-full sm:w-auto px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${showForm ? 'bg-zinc-800 text-zinc-400' : 'bg-[#FFD700] text-black shadow-lg shadow-yellow-500/10'}`}
-        >
-          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />} 
-          {showForm ? 'Cancelar' : 'Novo Produto'}
-        </button>
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+          <button 
+            onClick={handleExportExcel}
+            className="flex-1 sm:flex-none px-4 py-3 bg-zinc-900 border border-zinc-800 text-zinc-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:text-[#FFD700] transition-all"
+          >
+            <FileDown className="w-4 h-4" /> Exportar
+          </button>
+          
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            className="flex-1 sm:flex-none px-4 py-3 bg-zinc-900 border border-zinc-800 text-zinc-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:text-blue-400 transition-all disabled:opacity-50"
+          >
+            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />} 
+            Importar
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImportExcel} 
+            accept=".xlsx, .xls, .csv" 
+            className="hidden" 
+          />
+
+          <button 
+            onClick={() => { editingId ? resetForm() : setShowForm(!showForm) }} 
+            className={`flex-1 sm:flex-none px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${showForm ? 'bg-zinc-800 text-zinc-400' : 'bg-[#FFD700] text-black shadow-lg shadow-yellow-500/10'}`}
+          >
+            {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />} 
+            {showForm ? 'Cancelar' : 'Novo'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
