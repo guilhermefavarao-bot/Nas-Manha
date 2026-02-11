@@ -91,7 +91,9 @@ const App: React.FC = () => {
         
         if (session?.user) {
           setUser(session.user);
-          setUserRole(session.user.user_metadata?.role || 'atendente');
+          // Verifica role tanto no metadata quanto no app_metadata para garantir
+          const role = session.user.user_metadata?.role || session.user.app_metadata?.role || 'atendente';
+          setUserRole(role);
           fetchPermissions();
         } else {
           setLoading(false);
@@ -105,7 +107,8 @@ const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUser(session.user);
-        setUserRole(session.user.user_metadata?.role || 'atendente');
+        const role = session.user.user_metadata?.role || session.user.app_metadata?.role || 'atendente';
+        setUserRole(role);
         fetchPermissions();
       } else {
         setUser(null);
@@ -350,12 +353,13 @@ const App: React.FC = () => {
     }
   };
 
+  // Lógica Robusta de Acesso
   const hasAccess = (tab: Tab) => {
+    // Admin tem acesso TOTAL e IRRESTRITO sempre
     if (userRole === 'admin') return true;
     
+    // Para atendentes, verificamos as permissões configuradas pelo admin
     const perms = atendentePermissions;
-    
-    // Mapeamento correto de Tab Enum para RolePermissions keys
     switch(tab) {
       case Tab.Menu: return perms.menu;
       case Tab.Sales: return perms.sales;
@@ -439,9 +443,9 @@ const App: React.FC = () => {
             {hasAccess(Tab.Menu) && <NavButton active={activeTab === Tab.Menu} onClick={() => setActiveTab(Tab.Menu)} icon={<List />} label="Cardápio" />}
             {hasAccess(Tab.Sales) && <NavButton active={activeTab === Tab.Sales} onClick={() => setActiveTab(Tab.Sales)} icon={<ShoppingCart />} label="Vendas" />}
             {hasAccess(Tab.Orders) && <NavButton active={activeTab === Tab.Orders} onClick={() => setActiveTab(Tab.Orders)} icon={<Package />} label="Pedidos" badge={orders.filter(o => o.status === 'aberto' || o.status === 'pronto').length} />}
-            {hasAccess(Tab.Donos) && <NavButton active={activeTab === Tab.Donos} onClick={() => setActiveTab(Tab.Donos)} icon={<Star />} label="Donos" />}
-            {hasAccess(Tab.Cashier) && <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />}
-            {hasAccess(Tab.Admin) && <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />}
+            {(userRole === 'admin' || hasAccess(Tab.Donos)) && <NavButton active={activeTab === Tab.Donos} onClick={() => setActiveTab(Tab.Donos)} icon={<Star />} label="Donos" />}
+            {(userRole === 'admin' || hasAccess(Tab.Cashier)) && <NavButton active={activeTab === Tab.Cashier} onClick={() => setActiveTab(Tab.Cashier)} icon={<DollarSign />} label="Caixa" />}
+            {(userRole === 'admin' || hasAccess(Tab.Admin)) && <NavButton active={activeTab === Tab.Admin} onClick={() => setActiveTab(Tab.Admin)} icon={<Settings />} label="Estoque" />}
             {userRole === 'admin' && <NavButton active={activeTab === Tab.Team} onClick={() => setActiveTab(Tab.Team)} icon={<Users />} label="Equipe" />}
           </nav>
         </>
