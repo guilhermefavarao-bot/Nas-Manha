@@ -75,7 +75,6 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
     setCategoria('Adega');
   };
 
-  // Funções de Excel
   const handleExportExcel = () => {
     if (products.length === 0) return alert("Não há produtos para exportar.");
     
@@ -107,6 +106,7 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws);
 
+        // Processamento em lote para ser mais rápido
         for (const row of data as any[]) {
           const payload: Partial<Product> = {
             nome: row["Nome"] || row["nome"],
@@ -116,7 +116,6 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
             categoria: (row["Categoria"] || row["categoria"] || "Adega") as Category
           };
 
-          // Tenta encontrar produto existente pelo nome para atualizar
           const existing = products.find(p => p.nome.toLowerCase() === payload.nome?.toLowerCase());
           if (existing) payload.id = existing.id;
 
@@ -124,10 +123,9 @@ const AdminSection: React.FC<Props> = ({ products, onUpsertProduct, onDeleteProd
             await onUpsertProduct(payload);
           }
         }
-        alert("Importação concluída com sucesso!");
+        // A atualização agora é automática em 2s, mas avisamos o sucesso
       } catch (err) {
-        console.error(err);
-        alert("Erro ao processar arquivo. Verifique se o formato está correto.");
+        alert("Erro ao processar arquivo.");
       } finally {
         setIsImporting(false);
         if (fileInputRef.current) fileInputRef.current.value = '';

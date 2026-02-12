@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Package, ShoppingCart, DollarSign, Settings, List, Loader2, Beer, RefreshCw, LogOut, Users, Star } from 'lucide-react';
 import { Product, Order, CashEntry, Tab, RolePermissions, ItemPedido } from './types';
 import OrdersSection from './components/OrdersSection';
@@ -25,6 +25,9 @@ const App: React.FC = () => {
   const [userRole, setUserRole] = useState<'admin' | 'atendente' | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>(Tab.Menu);
   
+  // Ref para evitar múltiplas requisições simultâneas se o servidor estiver lento
+  const isFetchingRef = useRef(false);
+
   const [atendentePermissions, setAtendentePermissions] = useState<RolePermissions>({
     menu: true,
     sales: true,
@@ -48,14 +51,17 @@ const App: React.FC = () => {
     }, 3000);
   }, []);
 
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setSyncing(true);
+  const fetchData = useCallback(async (isInitial = false) => {
+    if (!user || isFetchingRef.current) return;
+    
+    isFetchingRef.current = true;
+    if (!isInitial) setSyncing(true);
+    
     try {
       const [pRes, oRes, cRes] = await Promise.all([
         supabase.from('products').select('*').order('nome'),
-        supabase.from('orders').select('*').order('data', { ascending: false }).limit(300),
-        supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(300)
+        supabase.from('orders').select('*').order('data', { ascending: false }).limit(500),
+        supabase.from('cash_entries').select('*').order('data', { ascending: false }).limit(500)
       ]);
 
       if (pRes.error) throw pRes.error;
@@ -66,14 +72,27 @@ const App: React.FC = () => {
       setCashier(cRes.data || []);
     } catch (err: any) {
       console.error("Fetch error:", err);
-      if (err.message?.includes('API key')) {
-         addNotification("Erro: Chave API Inválida no Supabase", "error");
-      }
     } finally {
+      isFetchingRef.current = false;
       setSyncing(false);
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
-  }, [user, addNotification]);
+  }, [user]);
+
+  // EFEITO DE ATUALIZAÇÃO AUTOMÁTICA (2 SEGUNDOS)
+  useEffect(() => {
+    if (!user) return;
+
+    // Busca inicial
+    fetchData(true);
+
+    // Configura o intervalo de 2 segundos
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [user, fetchData]);
 
   const fetchPermissions = useCallback(async () => {
     try {
@@ -87,17 +106,15 @@ const App: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
-        // Lógica de role mais robusta para Vercel
         const roleFromMetadata = session.user.user_metadata?.role || session.user.app_metadata?.role;
         const roleFromEmail = session.user.email?.toLowerCase().includes('admin') ? 'admin' : null;
         const finalRole = roleFromMetadata || roleFromEmail || 'atendente';
-        
         setUserRole(finalRole as any);
         await fetchPermissions();
+      } else {
+        setLoading(false);
       }
     } catch (err) {
-      console.error("Auth init error:", err);
-    } finally {
       setLoading(false);
     }
   }, [fetchPermissions]);
@@ -119,18 +136,20 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [initAuth, fetchPermissions]);
 
-  useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
-
   const handleUpsertProduct = async (p: Partial<Product>) => {
     const { error } = await supabase.from('products').upsert(p);
-    if (!error) { addNotification("Estoque atualizado!", "success"); fetchData(); }
+    if (!error) { 
+      addNotification("Estoque atualizado!", "success"); 
+      fetchData(); // Força atualização imediata
+    }
   };
 
   const handleDeleteProduct = async (id: string) => {
     const { error } = await supabase.from('products').delete().eq('id', id);
-    if (!error) { addNotification("Produto excluído!", "success"); fetchData(); }
+    if (!error) { 
+      addNotification("Produto excluído!", "success"); 
+      fetchData(); 
+    }
   };
 
   const handleCreateOrder = async (nome: string, telefone: string, status: any = 'aberto') => {
@@ -139,14 +158,175 @@ const App: React.FC = () => {
       atendente: user?.email || 'Admin', data: new Date().toISOString()
     };
     const { error } = await supabase.from('orders').insert(payload);
-    if (!error) { addNotification("Comanda aberta!", "success"); fetchData(); }
+    if (!error) { 
+      addNotification("Comanda aberta!", "success"); 
+      fetchData(); 
+    }
+  };
+
+  const handleAddItemToOrder = async (orderId: number, productId: string, qty: number) => {
+    const product = products.find(p => p.id === productId);
+    const order = orders.find(o => o.id === orderId);
+    if (!product || !order) return;
+
+    const isCombo = product.categoria === 'Combos';
+    const isDose = product.categoria === 'Doses';
+    const stockDeduction = isDose ? (Number(qty) / 10) : Number(qty);
+
+    if (!isCombo && Number(product.qtd) < stockDeduction) {
+      return addNotification("Saldo insuficiente!", "error");
+    }
+
+    const newItens = [...(order.itens || []), { 
+      nome: product.nome, 
+      qtd: Number(qty), 
+      preco: Number(product.preco) || 0, 
+      custo: Number(product.custo) || 0 
+    }];
+    
+    const newTotal = newItens.reduce((acc, item) => acc + (Number(item.preco) * Number(item.qtd)), 0);
+
+    try {
+      const { error: orderError } = await supabase.from('orders').update({ 
+        itens: newItens, 
+        total: Number(newTotal) 
+      }).eq('id', orderId);
+      
+      if (orderError) throw orderError;
+
+      if (!isCombo) {
+        await supabase.from('products').update({ 
+          qtd: Math.max(0, Number(product.qtd) - stockDeduction) 
+        }).eq('id', productId);
+      }
+
+      addNotification("Lançado!", "success");
+      fetchData();
+    } catch (err) {
+      addNotification("Erro ao lançar", "error");
+    }
+  };
+
+  const handleFinishOrder = async (orderId: number, paymentInput: any) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    const timestamp = new Date().toISOString();
+    
+    if (order.status === 'consumo_interno' || paymentInput === 'Cortesia') {
+      try {
+        await supabase.from('orders').update({ status: 'fechado', pagamento: 'CONSUMO INTERNO / CORTESIA', data: timestamp }).eq('id', orderId);
+        addNotification("Consumo finalizado!", "success");
+        fetchData();
+        return;
+      } catch (err) {
+        addNotification("Erro ao fechar consumo", "error");
+        return;
+      }
+    }
+
+    let payments = typeof paymentInput === 'string' ? [{ type: paymentInput, value: Number(order.total) }] : paymentInput;
+    const resumoPagto = payments.map((p:any) => `${p.type}: R$${Number(p.value).toFixed(2)}`).join(", ");
+
+    try {
+      const { error: updateError } = await supabase.from('orders').update({ 
+        status: 'fechado', 
+        pagamento: resumoPagto, 
+        data: timestamp,
+        total: Number(order.total)
+      }).eq('id', orderId);
+      
+      if (updateError) throw updateError;
+
+      const cashEntriesToInsert = payments.map((p:any) => ({ 
+        cliente: order.cliente, 
+        forma: p.type, 
+        valor: Number(p.value), 
+        data: timestamp, 
+        itens: order.itens 
+      }));
+
+      const { error: cashError } = await supabase.from('cash_entries').insert(cashEntriesToInsert);
+      if (cashError) throw cashError;
+
+      addNotification("Comanda fechada!", "success");
+      fetchData();
+    } catch (err: any) {
+      addNotification("Erro ao encerrar", "error");
+    }
+  };
+
+  const handleRemoveItemFromOrder = async (orderId: number, itemIdx: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || !order.itens[itemIdx]) return;
+
+    const itemToRemove = order.itens[itemIdx];
+    const newItens = [...order.itens];
+    newItens.splice(itemIdx, 1);
+    
+    const newTotal = newItens.reduce((acc, item) => acc + (Number(item.preco) * Number(item.qtd)), 0);
+
+    try {
+      const { error: orderError } = await supabase.from('orders').update({ itens: newItens, total: Number(newTotal) }).eq('id', orderId);
+      if (orderError) throw orderError;
+
+      const product = products.find(p => p.nome === itemToRemove.nome);
+      if (product && product.categoria !== 'Combos') {
+        const refundAmount = product.categoria === 'Doses' ? (Number(itemToRemove.qtd) / 10) : Number(itemToRemove.qtd);
+        await supabase.from('products').update({ 
+          qtd: Number(product.qtd) + refundAmount 
+        }).eq('id', product.id);
+      }
+
+      addNotification("Item removido!", "success");
+      fetchData();
+    } catch (err) {
+      addNotification("Erro ao remover item", "error");
+    }
+  };
+
+  const handleQuickSale = async (items: ItemPedido[], total: number, paymentType: string) => {
+    const timestamp = new Date().toISOString();
+    try {
+      const orderPayload = {
+        cliente: "Venda Direta",
+        status: 'fechado',
+        itens: items,
+        total: Number(total),
+        pagamento: paymentType,
+        atendente: user?.email || 'Balcão',
+        data: timestamp
+      };
+
+      const { error: orderError } = await supabase.from('orders').insert(orderPayload);
+      if (orderError) throw orderError;
+
+      const cashPayload = { 
+        cliente: "Venda Direta", 
+        forma: paymentType, 
+        valor: Number(total), 
+        data: timestamp, 
+        itens: items 
+      };
+      const { error: cashError } = await supabase.from('cash_entries').insert(cashPayload);
+      if (cashError) throw cashError;
+
+      for (const item of items) {
+        const product = products.find(p => p.nome === item.nome);
+        if (product && product.categoria !== 'Combos') {
+          const deduction = product.categoria === 'Doses' ? (Number(item.qtd) / 10) : Number(item.qtd);
+          await supabase.from('products').update({ qtd: Math.max(0, Number(product.qtd) - deduction) }).eq('id', product.id);
+        }
+      }
+
+      addNotification("Venda concluída!", "success");
+      fetchData();
+    } catch (err: any) {
+      addNotification("Erro na venda", "error");
+    }
   };
 
   const hasAccess = (tab: Tab) => {
-    // Admin tem acesso TOTAL e INCONDICIONAL a todas as abas
     if (userRole === 'admin') return true;
-    
-    // Atendente depende das permissões do banco
     const perms = atendentePermissions;
     switch(tab) {
       case Tab.Menu: return perms.menu;
@@ -155,7 +335,7 @@ const App: React.FC = () => {
       case Tab.Cashier: return perms.cashier;
       case Tab.Admin: return perms.stock;
       case Tab.Donos: return perms.donos;
-      case Tab.Team: return false; // Equipe é APENAS admin
+      case Tab.Team: return false; 
       default: return false;
     }
   };
@@ -177,34 +357,70 @@ const App: React.FC = () => {
               <div>
                 <h1 className="text-[#FFD700] font-black text-xl uppercase tracking-tighter leading-none">Adega Nas Manha</h1>
                 <div className="flex items-center gap-2 mt-1">
-                  <div className={`w-2 h-2 rounded-full ${syncing ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
-                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{userRole?.toUpperCase()}</span>
+                  <div className={`w-2 h-2 rounded-full ${syncing ? 'bg-[#FFD700] animate-ping' : 'bg-green-500'}`}></div>
+                  <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{syncing ? 'Sincronizando...' : userRole?.toUpperCase()}</span>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
-               <button onClick={fetchData} className="p-2.5 bg-zinc-900 rounded-xl text-zinc-400 hover:text-[#FFD700] transition-transform active:scale-90"><RefreshCw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} /></button>
+               <button onClick={() => fetchData()} className="p-2.5 bg-zinc-900 rounded-xl text-zinc-400 hover:text-[#FFD700] transition-transform active:scale-90"><RefreshCw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} /></button>
                <button onClick={() => supabase.auth.signOut()} className="p-2.5 bg-red-950/20 border border-red-900/20 rounded-xl text-red-500 hover:bg-red-600 hover:text-white transition-all"><LogOut className="w-5 h-5" /></button>
             </div>
           </header>
+
+          <div className="fixed top-24 right-4 z-[100] flex flex-col gap-3 w-80 pointer-events-none">
+            {notifications.map(n => (
+              <div key={n.id} className="pointer-events-auto bg-[#141414] border-l-4 border-[#FFD700] p-5 rounded-r-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-right-full">
+                <p className="text-[10px] font-black uppercase text-white tracking-widest">{n.message}</p>
+              </div>
+            ))}
+          </div>
 
           <main className="max-w-5xl mx-auto p-4 md:p-8 animate-in fade-in duration-700">
             {activeTab === Tab.Menu && hasAccess(Tab.Menu) && <MenuSection products={products} />}
             {activeTab === Tab.Sales && hasAccess(Tab.Sales) && (
               <SalesSection 
                 orders={orders} products={products} salesHistory={salesHistory} 
-                onCreateOrder={handleCreateOrder} onAddItem={() => {}} 
-                onFinishOrder={() => {}} onQuickSale={() => {}} onVoidSale={() => {}} 
+                onCreateOrder={handleCreateOrder} onAddItem={handleAddItemToOrder} 
+                onFinishOrder={handleFinishOrder} onQuickSale={handleQuickSale} onVoidSale={() => {}} 
               />
             )}
             {activeTab === Tab.Orders && hasAccess(Tab.Orders) && (
-              <OrdersSection orders={orders} onReady={() => {}} onCloseOrder={() => {}} onDelete={() => {}} onRemoveItem={() => {}} />
+              <OrdersSection 
+                orders={orders} 
+                onReady={async (id) => { 
+                  const { error } = await supabase.from('orders').update({status:'pronto'}).eq('id',id);
+                  if(!error) { addNotification("Pedido pronto!", "success"); fetchData(); }
+                }} 
+                onCloseOrder={handleFinishOrder} 
+                onDelete={async (id) => {
+                  const order = orders.find(o => o.id === id);
+                  if (order && order.itens) {
+                    for (const item of order.itens) {
+                      const product = products.find(p => p.nome === item.nome);
+                      if (product && product.categoria !== 'Combos') {
+                        const refund = product.categoria === 'Doses' ? (Number(item.qtd)/10) : Number(item.qtd);
+                        await supabase.from('products').update({ qtd: Number(product.qtd) + refund }).eq('id', product.id);
+                      }
+                    }
+                  }
+                  const { error } = await supabase.from('orders').delete().eq('id', id);
+                  if(!error) { addNotification("Pedido excluído!", "success"); fetchData(); }
+                }} 
+                onRemoveItem={handleRemoveItemFromOrder} 
+              />
             )}
             {activeTab === Tab.Donos && hasAccess(Tab.Donos) && (
               <DonosSection 
                 orders={orders} products={products} 
                 onCreateOwnerOrder={(name) => handleCreateOrder(name, '', 'consumo_interno')} 
-                onAddItem={() => {}} onFinishOrder={() => {}} onRemoveItem={() => {}} onDelete={() => {}}
+                onAddItem={handleAddItemToOrder} 
+                onFinishOrder={handleFinishOrder} 
+                onRemoveItem={handleRemoveItemFromOrder} 
+                onDelete={async (id) => {
+                  const { error } = await supabase.from('orders').delete().eq('id', id);
+                  if(!error) { addNotification("Consumo excluído!", "success"); fetchData(); }
+                }}
               />
             )}
             {activeTab === Tab.Cashier && hasAccess(Tab.Cashier) && <CashierSection entries={cashier} salesHistory={salesHistory} />}

@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
-import { Star, UserPlus, Search, Plus, Trash2, CheckCircle2, X, ShoppingBag } from 'lucide-react';
+import { Star, UserPlus, Search, Plus, Trash2, CheckCircle2, X, ShoppingBag, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { Order, Product, ItemPedido } from '../types';
+import * as XLSX from 'xlsx';
 
 interface Props {
   orders: Order[];
@@ -19,6 +20,7 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
   const [productSearch, setProductSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<string>('');
   const [qty, setQty] = useState<number | string>(1);
+  const [isExporting, setIsExporting] = useState(false);
 
   const ownerOrders = useMemo(() => orders.filter(o => o.status === 'consumo_interno'), [orders]);
   
@@ -34,22 +36,55 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
 
   const handleAddItem = () => {
     if (!selectedOrder || !selectedProduct) return;
-    onAddItem(parseInt(selectedOrder), selectedProduct, Number(qty));
+    const finalQty = Math.max(1, parseInt(qty.toString()) || 1);
+    onAddItem(parseInt(selectedOrder), selectedProduct, finalQty);
     setQty(1); setSelectedProduct(''); setProductSearch('');
+  };
+
+  const handleExportExcel = () => {
+    if (ownerOrders.length === 0) return alert("Não há registros de consumo interno para exportar.");
+    
+    setIsExporting(true);
+    try {
+      const data = ownerOrders.map(order => ({
+        "Sócio": order.cliente,
+        "Data Retirada": new Date(order.data).toLocaleDateString('pt-BR'),
+        "Hora": new Date(order.data).toLocaleTimeString('pt-BR'),
+        "Itens": order.itens.map(i => `${i.qtd}x ${i.nome}`).join(", "),
+        "Status": order.status.toUpperCase()
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, "Consumo_Socios");
+      XLSX.writeFile(wb, `RELATORIO_DONOS_ADEGA_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e) {
+      alert("Erro ao exportar Excel");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Cabeçalho Donos */}
-      <div className="bg-gradient-to-r from-blue-900/20 to-black p-8 rounded-[2rem] border border-blue-900/30">
-        <h2 className="text-blue-400 font-black text-2xl uppercase tracking-tighter flex items-center gap-3">
-          <Star className="w-8 h-8 fill-blue-400" /> Consumo de Sócios
-        </h2>
-        <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em] mt-2">Retiradas para uso interno (Não gera faturamento)</p>
+      <div className="bg-gradient-to-r from-blue-900/20 to-black p-8 rounded-[2rem] border border-blue-900/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-blue-400 font-black text-2xl uppercase tracking-tighter flex items-center gap-3">
+            <Star className="w-8 h-8 fill-blue-400" /> Consumo de Sócios
+          </h2>
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em] mt-2">Controle interno para reposição de estoque</p>
+        </div>
+        <button 
+          onClick={handleExportExcel}
+          disabled={isExporting}
+          className="flex items-center gap-2 bg-blue-600/10 border border-blue-600/20 text-blue-400 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30"
+        >
+          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+          Exportar Lista
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Abrir Nova Comanda de Dono */}
         <div className="bg-[#141414] p-6 rounded-[2rem] border border-zinc-800 space-y-4">
           <h3 className="text-white font-black uppercase text-xs tracking-widest flex items-center gap-2">
             <UserPlus className="w-4 h-4 text-blue-400" /> Abrir Comanda de Dono
@@ -64,7 +99,6 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
           <button onClick={handleCreate} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-blue-900/10">Abrir Comanda</button>
         </div>
 
-        {/* Lançar Itens na Comanda de Dono */}
         <div className="bg-[#141414] p-6 rounded-[2rem] border border-zinc-800 space-y-4">
           <h3 className="text-white font-black uppercase text-xs tracking-widest flex items-center gap-2">
             <ShoppingBag className="w-4 h-4 text-blue-400" /> Registrar Itens
@@ -90,7 +124,9 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
             </div>
             <input 
               type="number" 
+              min="1"
               value={qty} 
+              onFocus={(e) => e.target.select()}
               onChange={e => setQty(e.target.value)} 
               className="w-20 bg-black border border-zinc-800 rounded-2xl p-4 text-white text-center font-bold outline-none" 
             />
@@ -103,7 +139,7 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
                 className={`p-3 rounded-xl border text-left flex flex-col transition-all ${selectedProduct === p.id ? 'border-blue-500 bg-blue-900/10' : 'border-zinc-800 bg-black'}`}
               >
                 <span className="font-bold text-[10px] truncate text-white">{p.nome}</span>
-                <span className="text-zinc-600 text-[8px] font-black uppercase">Estoque: {p.qtd.toFixed(1)}</span>
+                <span className="text-zinc-600 text-[8px] font-black uppercase">Saldo: {p.qtd.toFixed(1)}</span>
               </button>
             ))}
           </div>
@@ -117,7 +153,6 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
         </div>
       </div>
 
-      {/* Comandas Ativas de Donos */}
       <div className="space-y-4 pt-4">
         <h3 className="text-white font-black uppercase text-xs tracking-widest flex items-center gap-2 px-2">
           <Star className="w-4 h-4 text-blue-400" /> Comandas de Consumo Interno
@@ -129,13 +164,14 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
                 <div>
                   <h4 className="font-black text-white uppercase text-lg">{order.cliente}</h4>
                   <div className="text-zinc-600 text-[9px] font-black uppercase mt-1">
-                    Retirado em {new Date(order.data).toLocaleString()}
+                    Iniciado em {new Date(order.data).toLocaleString()}
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button 
                     onClick={() => onDelete(order.id)}
                     className="p-3 bg-red-950/20 text-red-500 rounded-xl hover:bg-red-600 hover:text-white transition-all"
+                    title="Excluir Registro"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -143,7 +179,7 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
                     onClick={() => onFinishOrder(order.id, 'Cortesia')}
                     className="bg-blue-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 transition-all flex items-center gap-2"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Finalizar
+                    <CheckCircle2 className="w-4 h-4" /> Finalizar Retirada
                   </button>
                 </div>
               </div>
@@ -151,12 +187,12 @@ const DonosSection: React.FC<Props> = ({ orders, products, onCreateOwnerOrder, o
               <div className="bg-black/40 rounded-2xl border border-zinc-900 p-4 space-y-2">
                 {order.itens.length === 0 && <p className="text-center py-4 text-zinc-700 text-[10px] font-black uppercase">Nenhum item lançado ainda</p>}
                 {order.itens.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center group/item">
+                  <div key={idx} className="flex justify-between items-center group/item border-b border-zinc-900/50 last:border-0 py-1">
                     <div className="flex items-center gap-3">
                       <span className="text-blue-400 font-black text-xs">{item.qtd}x</span>
                       <span className="text-zinc-400 text-xs font-bold uppercase">{item.nome}</span>
                     </div>
-                    <button onClick={() => onRemoveItem(order.id, idx)} className="opacity-0 group-hover/item:opacity-100 text-zinc-700 hover:text-red-500">
+                    <button onClick={() => onRemoveItem(order.id, idx)} className="opacity-0 group-hover/item:opacity-100 p-1 text-zinc-700 hover:text-red-500">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
